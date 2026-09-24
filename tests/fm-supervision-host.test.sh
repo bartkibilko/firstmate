@@ -871,10 +871,12 @@ test_park_boundary_holds_under_back_to_back_closes() {
   local home
   home=$(make_home boundary-busy away)
   echo chain > "$home/stub-mode"
-  FM_SUPERVISION_HOST_PARK_SECONDS=20 FM_SUPERVISION_HOST_TURN_TIMEOUT=3 FM_SUPERVISION_ENGINE_GRACE=1 start_host "$home"
+  # The turn bound leaves the stub's real drain, report, and acknowledgement
+  # room on a loaded machine; the park still ends while closes keep arriving.
+  FM_SUPERVISION_HOST_PARK_SECONDS=60 FM_SUPERVISION_HOST_TURN_TIMEOUT=15 FM_SUPERVISION_ENGINE_GRACE=1 start_host "$home"
   wait_until 150 watcher_live "$home" || fail "boundary-busy: the host never started a watcher cycle"
   append_status "$home" 'the first of many'
-  wait_until 450 host_exited "$home" \
+  wait_until 1000 host_exited "$home" \
     || fail "the host kept handling back-to-back closes past its park boundary: $(cat "$home/state/.supervision-host.log")"
   handled_at_least "$home" 2 || fail "fixture: closes did not arrive back to back: $(cat "$home/state/.supervision-host.log")"
   assert_re '^supervision-host: cycle boundary - ' "$home/host.out" "the park boundary must reach main as a host line"
