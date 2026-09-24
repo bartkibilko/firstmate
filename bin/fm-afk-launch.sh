@@ -235,7 +235,7 @@ fm_afk_launch_quiet_needs_nothing() {
 }
 
 fm_afk_launch_quiet_statement() {
-  printf 'Quiet mode needs nothing on this home: the ordinary supervision session already handles the wakes it can while the captain is present, keeps routine outcomes off this conversation, and hands this conversation only what needs it; no daemon and no away record are used.\n'
+  printf 'Quiet mode needs nothing on this home: the ordinary supervision session already handles the wakes it can while the captain is present, never opens a turn here for a routine outcome, and hands this conversation only what needs it; no daemon and no away record are used.\n'
 }
 
 # The away daemon is no longer launched on Pi, nor for away mode on a primary
