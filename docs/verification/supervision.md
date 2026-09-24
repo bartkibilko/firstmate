@@ -691,12 +691,12 @@ This supports the attended posture, the dialog mirror, the captain-outcome drain
 It was measured on 2026-09-24 on macOS 26.6.2 arm64 with Claude Code 2.1.281 as the engine (`sonnet`), and as primaries Claude Code 2.1.281 (`sonnet`), codex-cli 0.155.1 (`gpt-5.6-sol` medium), cursor-agent 2026.09.23-86fc751 (`gpt-5.6-sol-high`), grok 1.0.41 (`grok-4.7` high), OpenCode 1.18.32 (`opencode/big-pickle`, because its OpenAI login rejects the OpenAI models with a 400), and Pi 0.82.0 (`openai-codex/gpt-5.6-sol`), with Pi workers on `openai-codex/gpt-5.6-sol`, in disposable lab homes on private tmux sockets.
 omp is not installed on the measuring machine, so it has no verified writer and keeps every attended close on main.
 
-The opt-in live guard proves each writer against the real harness, including the two harness-started turns that arrive as prompts and the Codex mid-turn steer:
+The opt-in live guard proves each writer against the real harness, including the two harness-started turns that arrive as prompts and the Codex mid-turn steer (run at 23:24 UTC, when Claude Code had updated itself to 2.1.282):
 
 ```text
 $ FM_HOST_MIRROR_LIVE_E2E=1 tests/fm-host-mirror-live-e2e.test.sh
-ok - claude 2.1.281 (Claude Code): a turn the harness started itself was not mirrored as the captain's words
-ok - claude 2.1.281 (Claude Code): the tracked registrations mirrored the captain prompt and main reply
+ok - claude 2.1.282 (Claude Code): a turn the harness started itself was not mirrored as the captain's words
+ok - claude 2.1.282 (Claude Code): the tracked registrations mirrored the captain prompt and main reply
 ok - codex codex-cli 0.155.1: a captain message typed during a running turn was mirrored
 ok - codex codex-cli 0.155.1: the tracked registrations mirrored the captain prompt and main reply
 ok - cursor 2026.09.23-86fc751: the tracked registrations mirrored the captain prompt and main reply
@@ -731,6 +731,18 @@ Each non-Pi primary, with `config/supervision-host` naming `claude`, supervised 
 | Codex main restarted mid-session | its first close resurfaced to main as `check: rearm-resurface` and the mirror re-keyed to the new session |
 
 The Pi primary, without the file, ran the same attended, away, and return session on its in-process branch with the changed branch prompt: the branch reported a finished local-only branch as a captain outcome for main to land, and main landed and acknowledged each one.
+
+The existing live guards for the surfaces this change touches (the tracked Claude, Codex, Grok, and Cursor hook registrations, the host, and the dispatch module the Pi watcher now shares), run on the branch on 2026-09-24, with a before-and-after pair on the base tree `e1b7f4f5` wherever the branch run failed:
+
+| Guard | Branch | Base |
+| --- | --- | --- |
+| `FM_SUPERVISION_HOST_LIVE_E2E=1 tests/fm-supervision-host-live-e2e.test.sh` | ok (Claude Code 2.1.282) | not run |
+| `FM_CLAUDE_LIVE_E2E=1 tests/fm-claude-stop-autoarm-live-e2e.test.sh` | ok | not run |
+| `FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh` | ok | not run |
+| `FM_PI_BRANCH_LIVE_E2E=1 tests/fm-pi-branch-live-e2e.test.sh` | ok (Pi SDK 0.81.1) | not run |
+| `FM_CURSOR_PRIMARY_LIVE_E2E=1 tests/fm-cursor-primary-live-e2e.test.sh` | first run `not ok - a watcher wake delivered as a stop-hook follow-up did not appear within 300s` at a 15-minute load average near 28; rerun ok | ok |
+| `FM_GROK_LIVE_E2E=1 tests/fm-grok-continuity-live-e2e.test.sh` (grok 1.0.41) | `not ok - Grok did not surface its native background-task completion notification` | the same |
+| `FM_OPENCODE_LIVE_E2E=1 tests/fm-opencode-primary-live-e2e.test.sh` | `not ok - ... "The usage limit has been reached","statusCode":429` | not run; the same limit as the base tree in the non-Pi primaries record above |
 
 Fixed on the branch from these sessions:
 

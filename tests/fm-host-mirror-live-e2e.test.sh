@@ -38,7 +38,12 @@ CHECKED=0
 ABSENT=
 
 cleanup() {
-  tmux -L "$SOCKET" kill-server >/dev/null 2>&1 || true
+  local harness
+  # One private tmux server per harness, so a server that is shutting down
+  # after one harness's session ends can never swallow the next session.
+  for harness in claude codex cursor grok opencode; do
+    tmux -L "$SOCKET-$harness" kill-server >/dev/null 2>&1 || true
+  done
   fm_test_cleanup
 }
 trap cleanup EXIT
@@ -141,48 +146,48 @@ run_interactive() {  # <harness> <command> [arguments...]
   version=$("$command" --version 2>/dev/null | head -n 1)
   root="$LAB/$harness"
   [ -d "$root" ] || root=$(make_primary "$harness")
-  tmux -L "$SOCKET" new-session -d -s "$harness" -x 200 -y 50 -c "$root" \
+  tmux -L "$SOCKET-$harness" new-session -d -s "$harness" -x 200 -y 50 -c "$root" \
     "sh -c '$LOCKED_EXEC' sh $command $*" || fail "$harness $version: the tmux session did not start"
   i=0
   while [ "$i" -lt 60 ]; do
-    screen=$(tmux -L "$SOCKET" capture-pane -p -t "$harness" 2>/dev/null)
+    screen=$(tmux -L "$SOCKET-$harness" capture-pane -p -t "$harness" 2>/dev/null)
     # A key sent to a dialog is followed by a pause long enough for the
     # harness to redraw, so the same dialog is never answered twice.
     case "$screen" in
-      *'[a] Trust this workspace'*) tmux -L "$SOCKET" send-keys -t "$harness" a; sleep 3 ;;
+      *'[a] Trust this workspace'*) tmux -L "$SOCKET-$harness" send-keys -t "$harness" a; sleep 3 ;;
       *'Yes, I trust this folder'*|*'Trust all and continue'*)
-        tmux -L "$SOCKET" send-keys -t "$harness" Down; sleep 0.5; tmux -L "$SOCKET" send-keys -t "$harness" Enter; sleep 3 ;;
-      *'1. Yes, continue'*) tmux -L "$SOCKET" send-keys -t "$harness" Enter; sleep 3 ;;
+        tmux -L "$SOCKET-$harness" send-keys -t "$harness" Down; sleep 0.5; tmux -L "$SOCKET-$harness" send-keys -t "$harness" Enter; sleep 3 ;;
+      *'1. Yes, continue'*) tmux -L "$SOCKET-$harness" send-keys -t "$harness" Enter; sleep 3 ;;
       *'Ask Codex to do anything'*) break ;;
       *'bypass permissions on'*) break ;;
-      *'Do you trust the contents of this directory'*) tmux -L "$SOCKET" send-keys -t "$harness" y; sleep 3 ;;
+      *'Do you trust the contents of this directory'*) tmux -L "$SOCKET-$harness" send-keys -t "$harness" y; sleep 3 ;;
       *'Plan, search, build'*|*'Grok Build'*|*'ctrl+p'*|*'tab agents'*) break ;;
     esac
     sleep 1
     i=$((i + 1))
   done
   sleep 3
-  tmux -L "$SOCKET" send-keys -t "$harness" -l "${STEER_PROMPT:-$PROMPT}"
+  tmux -L "$SOCKET-$harness" send-keys -t "$harness" -l "${STEER_PROMPT:-$PROMPT}"
   sleep 1
-  tmux -L "$SOCKET" send-keys -t "$harness" Enter
+  tmux -L "$SOCKET-$harness" send-keys -t "$harness" Enter
   if [ -n "${STEER_TEXT:-}" ]; then
     # Type the steer only once the turn is visibly inside its tool call.
     i=0
-    while [ "$i" -lt 180 ] && ! tmux -L "$SOCKET" capture-pane -p -t "$harness" 2>/dev/null | grep -F "$STEER_WHEN" >/dev/null; do
+    while [ "$i" -lt 180 ] && ! tmux -L "$SOCKET-$harness" capture-pane -p -t "$harness" 2>/dev/null | grep -F "$STEER_WHEN" >/dev/null; do
       sleep 0.5
       i=$((i + 1))
     done
     sleep 2
-    tmux -L "$SOCKET" send-keys -t "$harness" -l "$STEER_TEXT"
+    tmux -L "$SOCKET-$harness" send-keys -t "$harness" -l "$STEER_TEXT"
     sleep 1
-    tmux -L "$SOCKET" send-keys -t "$harness" Enter
+    tmux -L "$SOCKET-$harness" send-keys -t "$harness" Enter
     i=0
     while [ "$i" -lt 240 ] && ! mirrored "$root" captain "$STEER_TEXT"; do sleep 0.5; i=$((i + 1)); done
-    mirrored "$root" captain "$STEER_TEXT" || fail "$harness $version: a captain message typed during a running turn was not mirrored"$'\n'"--- mirror"$'\n'"$(cat "$root/state/.host-mirror.jsonl" 2>/dev/null)"$'\n'"--- pane"$'\n'"$(tmux -L "$SOCKET" capture-pane -p -t "$harness" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -30)"
+    mirrored "$root" captain "$STEER_TEXT" || fail "$harness $version: a captain message typed during a running turn was not mirrored"$'\n'"--- mirror"$'\n'"$(cat "$root/state/.host-mirror.jsonl" 2>/dev/null)"$'\n'"--- pane"$'\n'"$(tmux -L "$SOCKET-$harness" capture-pane -p -t "$harness" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -30)"
     printf 'ok - %s %s: a captain message typed during a running turn was mirrored\n' "$harness" "$version"
   fi
   if ! wait_mirrored "$root" 180; then
-    tmux -L "$SOCKET" capture-pane -p -t "$harness" > "$LAB/$harness.screen" 2>/dev/null || true
+    tmux -L "$SOCKET-$harness" capture-pane -p -t "$harness" > "$LAB/$harness.screen" 2>/dev/null || true
   fi
   if [ -n "${REWAKE_WANTED:-}" ]; then
     i=0
@@ -196,7 +201,7 @@ run_interactive() {  # <harness> <command> [arguments...]
     fi
     printf 'ok - %s %s: a turn the harness started itself was not mirrored as the captain'"'"'s words\n' "$harness" "$version"
   fi
-  tmux -L "$SOCKET" kill-session -t "$harness" >/dev/null 2>&1 || true
+  tmux -L "$SOCKET-$harness" kill-session -t "$harness" >/dev/null 2>&1 || true
   check "$harness" "$version" "$root"
 }
 
