@@ -154,6 +154,8 @@ test_operational_foreign_and_unowned_input_is_dropped() {
       | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude
     printf "%s" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"\\n\\n<task-notification>\\n<summary>Stop hook feedback</summary>\\n</task-notification>\"}" \
       | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude
+    printf "%s" "{\"hookEventName\":\"user_prompt_submit\",\"prompt\":\"<system-reminder> Background task completed (exit code: 0).</system-reminder>\"}" \
+      | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook grok
     printf "%s" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"kept\"}" \
       | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude
   ' || fail "a writer failed"

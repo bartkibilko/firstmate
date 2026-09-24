@@ -14,10 +14,13 @@
 # model (default opencode/big-pickle). An absent harness is reported, never
 # passed over silently, and a run that checked no harness fails. Cursor and
 # Grok fire project hooks only in an interactive session, OpenCode's headless
-# run exits before its plugin sees the session go idle, and Claude must show
-# that its Stop-hook rewake, which it submits as a prompt, is not mirrored as
-# the captain's words, so those four run in a private tmux server; Codex runs
-# headless.
+# run exits before its plugin sees the session go idle, Claude and Grok must
+# show that a turn they start themselves (Claude's Stop-hook rewake, Grok's
+# background-task completion), which each submits as a prompt, is not mirrored
+# as the captain's words, and Codex must show that a captain message typed
+# during a running turn is mirrored, so every harness runs in a private tmux
+# server. An interactive Codex run records its folder and hook trust in
+# ~/.codex/config.toml, as any first Codex session in a directory does.
 # shellcheck disable=SC2016 # single-quoted scripts expand inside their own shells
 set -u
 
@@ -121,6 +124,15 @@ run_codex() {
     run_interactive codex codex --dangerously-bypass-approvals-and-sandbox -c "model_reasoning_effort=\"low\""
 }
 
+# Grok runs one background task, whose completion notice Grok submits as a
+# prompt that starts a turn of its own, as it does for the model-owned host
+# arm, so the guard also proves that notice is never mirrored as the captain's
+# words.
+run_grok() {
+  STEER_PROMPT='Start the shell command sleep 5 as a background task, then end your turn. When that task completes, reply with exactly the word mirror-ok.' \
+    REWAKE_WANTED=mirror-ok run_interactive grok grok --always-approve
+}
+
 # An interactive session in a private tmux server: answer a trust prompt when
 # one appears, type the prompt, and wait for the mirror.
 run_interactive() {  # <harness> <command> [arguments...]
@@ -169,11 +181,14 @@ run_interactive() {  # <harness> <command> [arguments...]
   if [ -n "${REWAKE_WANTED:-}" ]; then
     i=0
     while [ "$i" -lt 240 ] && ! mirrored "$root" main "$REWAKE_WANTED"; do sleep 0.5; i=$((i + 1)); done
-    mirrored "$root" main "$REWAKE_WANTED" || fail "$harness $version: the rewake turn never ran, so the guard proved nothing about it"
-    if jq -r 'select(.tag == "captain") | .text' "$root/state/.host-mirror.jsonl" | grep -E 'task-notification|lab rewake|Stop hook' >/dev/null; then
-      fail "$harness $version: a Stop-hook rewake was mirrored as the captain's words: $(cat "$root/state/.host-mirror.jsonl")"
+    mirrored "$root" main "$REWAKE_WANTED" || fail "$harness $version: the harness-started turn never ran, so the guard proved nothing about it"
+    [ "$(jq -r 'select(.tag == "main") | .seq' "$root/state/.host-mirror.jsonl" | wc -l)" -ge 2 ] \
+      || fail "$harness $version: no second turn was mirrored, so the guard proved nothing about a harness-started turn"
+    if jq -r 'select(.tag == "captain") | .text' "$root/state/.host-mirror.jsonl" \
+      | grep -E 'task-notification|system-reminder|lab rewake|Stop hook|Background task' >/dev/null; then
+      fail "$harness $version: a turn the harness started itself was mirrored as the captain's words: $(cat "$root/state/.host-mirror.jsonl")"
     fi
-    printf 'ok - %s %s: a Stop-hook rewake turn was not mirrored as the captain'"'"'s words\n' "$harness" "$version"
+    printf 'ok - %s %s: a turn the harness started itself was not mirrored as the captain'"'"'s words\n' "$harness" "$version"
   fi
   tmux -L "$SOCKET" kill-session -t "$harness" >/dev/null 2>&1 || true
   check "$harness" "$version" "$root"
@@ -197,7 +212,7 @@ for harness in $HARNESSES; do
     codex) run_codex ;;
     opencode) run_interactive opencode opencode -m "$OPENCODE_MODEL" ;;
     cursor) run_interactive cursor cursor-agent ;;
-    grok) run_interactive grok grok ;;
+    grok) run_grok ;;
   esac
 done
 

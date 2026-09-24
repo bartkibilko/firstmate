@@ -20,9 +20,11 @@
 # prompt the shared operational-input protocol classifies
 # (bin/fm-operational-input.sh: watcher wakes, guard follow-ups, launch briefs)
 # is fleet machinery, not dialog, and is dropped, and so is a prompt that opens
-# with the <task-notification> wrapper a harness puts around a turn it started
-# itself: Claude submits its Stop-hook rewake that way, with no other field to
-# tell it from a typed prompt (tests/fm-host-mirror-live-e2e.test.sh proves it).
+# with the wrapper a harness puts around a turn it started itself: Claude
+# submits its Stop-hook rewake inside <task-notification>, and Grok its
+# background-task completion inside <system-reminder>, each with no other field
+# to tell it from a typed prompt (tests/fm-host-mirror-live-e2e.test.sh proves
+# both).
 # In a Codex transcript the user items Codex adds itself open with a wrapper
 # tag or with its AGENTS.md preamble and are dropped the same way; the
 # transcript's read position is $STATE/.host-mirror-codex ("<path>\t<lines>").
@@ -135,7 +137,7 @@ append_entry() {  # <captain|main> <text> [<id>]
   [ -n "$(printf '%s' "$text" | tr -d '[:space:]')" ] || return 0
   if [ "$tag" = captain ]; then
     case "${text#"${text%%[![:space:]]*}"}" in
-      '<task-notification>'*) return 0 ;;
+      '<task-notification>'*|'<system-reminder>'*) return 0 ;;
       '<'*|'# AGENTS.md instructions'*) [ "$SOURCE_HARNESS" != codex ] || return 0 ;;
     esac
     ! operational "$text" || return 0
