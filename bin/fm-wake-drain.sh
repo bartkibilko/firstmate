@@ -571,29 +571,24 @@ EOF
 # Bounded like OPEN DECISIONS, silent when nothing is new or unprocessed, and
 # never fails the drain.
 print_branch_outcomes_section() {
-  local config outcome unread through rows seq task summary line max=0 routine=''
+  local config rows routine captain line seq max=0
   local output='' used=0 shown=0 omitted=0 bytes item_bytes=600 global_bytes=4000
   [ "$ACTOR" = main ] || return 0
   config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
   [ -f "$config/supervision-host" ] || return 0
   [ -s "$STATE/branch-outcomes.jsonl" ] || return 0
   [ ! -f "$STATE/.afk-contract" ] || return 0
-  case "$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null)" in pi|pi-signed) return 0 ;; esac
   command -v jq >/dev/null 2>&1 || return 0
-  outcome="$SCRIPT_DIR/fm-branch-outcome.sh"
-  if ! unread=$("$outcome" unread 2>/dev/null); then
+  case "$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null)" in pi|pi-signed) return 0 ;; esac
+  if ! rows=$("$SCRIPT_DIR/fm-branch-outcome.sh" present 2>/dev/null); then
     printf 'BRANCH OUTCOMES SKIPPED: the outcome store could not be read safely; repair it before relying on this section.\n'
     return 0
   fi
-  if [ -n "$unread" ]; then
-    routine=$(printf '%s\n' "$unread" | jq -r 'select(.verdict == "routine" and .silent != true)
-      | "[seq \(.seq)] \(.task): \(.summary | gsub("[\t\n\r]"; " "))"' 2>/dev/null)
-    through=$(printf '%s\n' "$unread" | jq -r '.seq' 2>/dev/null | tail -n 1)
-    if [ -n "$through" ] && ! "$outcome" mark-read --through "$through" >/dev/null 2>&1; then
-      printf 'BRANCH OUTCOMES SKIPPED: the outcome store refused to advance its read cursor; retry on the next drain.\n'
-      return 0
-    fi
-  fi
+  [ -n "$rows" ] || return 0
+  routine=$(printf '%s\n' "$rows" | jq -r 'select(.unread and .verdict == "routine" and .silent != true)
+    | "[seq \(.seq)] \(.task): \(.summary | gsub("[\t\n\r]"; " "))"' 2>/dev/null)
+  captain=$(printf '%s\n' "$rows" | jq -r 'select(.verdict == "captain")
+    | "\(.seq)\t[seq \(.seq)] \(.task): \(.summary | gsub("[\t\n\r]"; " "))"' 2>/dev/null)
   if [ -n "$routine" ]; then
     # Newest first under the cap, printed oldest first.
     while IFS= read -r line; do
@@ -615,17 +610,12 @@ ROWS
     [ "$omitted" -eq 0 ] || printf 'BRANCH OUTCOMES, ROUTINE: %d older omitted (byte cap; bin/fm-branch-outcome.sh list has them)\n' "$omitted"
     printf '%s' "$output"
   fi
+  [ -n "$captain" ] || return 0
   output=''
   used=0
   omitted=0
-  if ! rows=$("$outcome" unprocessed 2>/dev/null); then
-    printf 'BRANCH OUTCOMES SKIPPED: the outcome store could not be read safely; repair it before relying on this section.\n'
-    return 0
-  fi
-  [ -n "$rows" ] || return 0
-  while IFS=$(printf '\t') read -r seq task summary; do
+  while IFS=$(printf '\t') read -r seq line; do
     case "$seq" in ''|*[!0-9]*) continue ;; esac
-    line="[seq $seq] $task: $summary"
     fm_cap_line_var "$line" $((item_bytes - 1))
     line=$FM_LINE_CAP_LINE
     bytes=$(( ${#line} + 1 ))
@@ -639,7 +629,7 @@ ROWS
     shown=$((shown + 1))
     max=$seq
   done <<ROWS
-$(printf '%s\n' "$rows" | jq -r '[.seq, .task, (.summary | gsub("[\t\n\r]"; " "))] | @tsv' 2>/dev/null)
+$captain
 ROWS
   [ "$shown" -gt 0 ] || return 0
   printf 'BRANCH OUTCOMES (captain outcomes the supervision session recorded for you, oldest first - process each as firstmate: tell the captain, land or merge what is ready, answer or escalate a decision, or act on a blocker):\n'
