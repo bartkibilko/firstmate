@@ -75,7 +75,7 @@ Report verdict captain for the finished result of work the captain requested, ev
 A start or still-working update on requested work that brings no new artifact, finding, or decision is verdict routine.
 Also report verdict captain for:
 - work ready for review - include the PR's full https:// URL when the task's ready status or `pr=` metadata holds one, otherwise only the identifier you actually have;
-- work only MAIN may finish in the attended posture, such as a local-only branch ready to land or a pull request ready to merge, even when the captain asked not to hear about that work: MAIN acts on captain outcomes and decides what the captain hears;
+- anything MAIN must act on in the attended posture to move the work forward, such as a local-only branch ready to land, a pull request ready to merge, or a step MAIN said it would take once the work was ready, even when the captain asked not to hear about that work and even when an earlier outcome already told MAIN: a routine outcome never opens a MAIN turn, so MAIN learns of it only at its next wake, and MAIN, not you, decides what the captain hears;
 - a decision only the captain can make, including every ask-user finding from a validation gate;
 - a real blocker or failure after the playbook is exhausted;
 - a needed credential or login;

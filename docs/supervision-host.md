@@ -88,7 +88,7 @@ Every later drain, including the session-start digest, presents them again until
 The section runs only for main on an opted-in home whose primary is not Pi, and never while the away record exists; after the return it presents the away window's captain outcomes, which the return brief also listed, as the Pi branch does after a return.
 An unprocessed captain outcome is never adopted as processed, so a home that opts in mid-session cannot lose its first one; outcomes recorded before this section existed are presented once more, the safe direction.
 Routine outcomes never open a main turn: the next drain lists each once, above the captain outcomes and with nothing to acknowledge, the way the Pi branch's routine notes reach main's transcript without a turn, and silent fleet reviews never appear.
-A finished piece of work only main may complete while attended, such as a local-only branch to land or a pull request to merge, is a captain outcome even when the captain asked not to hear about that work (`bin/fm-branch-prompt.sh` "Verdict: routine or captain"), because a routine outcome would leave it waiting for main's next drain.
+Anything main must act on while attended to move the work forward, such as a local-only branch to land or a pull request to merge, is a captain outcome even when the captain asked not to hear about that work or an earlier outcome already told main (`bin/fm-branch-prompt.sh` "Verdict: routine or captain"), because a routine outcome opens no main turn and would leave it waiting for main's next wake.
 
 ## The broken-session latch
 
