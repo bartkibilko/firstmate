@@ -685,6 +685,76 @@ tests/fm-supervision-instructions.test.sh
 tests/fm-afk-launch.test.sh
 ```
 
+### Attended posture, dialog mirror, and /quiet
+
+This supports the attended posture, the dialog mirror, the captain-outcome drain, the broken-session latch, and `/quiet` in [supervision-host.md](../supervision-host.md).
+It was measured on 2026-09-24 on macOS 26.6.2 arm64 with Claude Code 2.1.281 as the engine (`sonnet`), and as primaries Claude Code 2.1.281 (`sonnet`), codex-cli 0.155.1 (`gpt-5.6-sol` medium), cursor-agent 2026.09.23-86fc751 (`gpt-5.6-sol-high`), grok 1.0.41 (`grok-4.7` high), OpenCode 1.18.32 (`opencode/big-pickle`, because its OpenAI login rejects the OpenAI models with a 400), and Pi 0.82.0 (`openai-codex/gpt-5.6-sol`), with Pi workers on `openai-codex/gpt-5.6-sol`, in disposable lab homes on private tmux sockets.
+omp is not installed on the measuring machine, so it has no verified writer and keeps every attended close on main.
+
+The opt-in live guard proves each writer against the real harness, including the two harness-started turns that arrive as prompts and the Codex mid-turn steer:
+
+```text
+$ FM_HOST_MIRROR_LIVE_E2E=1 tests/fm-host-mirror-live-e2e.test.sh
+ok - claude 2.1.281 (Claude Code): a turn the harness started itself was not mirrored as the captain's words
+ok - claude 2.1.281 (Claude Code): the tracked registrations mirrored the captain prompt and main reply
+ok - codex codex-cli 0.155.1: a captain message typed during a running turn was mirrored
+ok - codex codex-cli 0.155.1: the tracked registrations mirrored the captain prompt and main reply
+ok - cursor 2026.09.23-86fc751: the tracked registrations mirrored the captain prompt and main reply
+ok - grok grok 1.0.41 (4220f3b224a6) [stable]: a turn the harness started itself was not mirrored as the captain's words
+ok - grok grok 1.0.41 (4220f3b224a6) [stable]: the tracked registrations mirrored the captain prompt and main reply
+ok - opencode 1.18.32: the tracked registrations mirrored the captain prompt and main reply
+ok - host mirror live: 5 harness(es) proved their writers
+```
+
+The payloads the writers read, captured from the real harnesses:
+
+| Primary | Captain text | Main text |
+| --- | --- | --- |
+| Claude | `UserPromptSubmit` `.prompt`; its Stop-hook rewake arrives there too, as `<task-notification>...` with no other distinguishing field | `Stop` `.last_assistant_message` |
+| Codex | the rollout transcript's `response_item` user messages, including a steer typed during a running turn, which fires no `UserPromptSubmit` or `Stop` | the same transcript's assistant messages |
+| Grok | `UserPromptSubmit` `.prompt`; a background-task completion arrives there too, as `<system-reminder> Background task ... completed` | `Stop` `.lastAssistantMessage` |
+| Cursor | `beforeSubmitPrompt` `.prompt` (the `stop` payload carries no text) | `afterAgentResponse` `.text` |
+| OpenCode | the plugin's `chat.message` parts | the final assistant message read at `session.idle`; a headless `opencode run` exits before that event |
+
+Each non-Pi primary, with `config/supervision-host` naming `claude`, supervised the same session: two or three gated workers, a worker's keyed decision, the captain's standing words that one result mattered and another was routine, gates opened one at a time, `/quiet` (plain words on Codex, Cursor, Grok, and OpenCode, whose TUIs reject an unknown slash command), one more worker, an away window, the gate opening while away, and the return.
+
+| Case | Observed |
+| --- | --- |
+| A decision close, or a stale close for a task with an open decision | reached main unchanged, with `pass-through attended main-only` in the ledger, on every primary |
+| A worker's routine progress or an idle finished worker | handled on the engine with no main turn; the next drain listed it once |
+| A finished result the captain asked about | the engine recorded a captain outcome, the host exited with `supervision-host: branch-outcome: ... (store rows <n>)`, main drained `BRANCH OUTCOMES`, told the captain, and ran `bin/fm-branch-outcome.sh mark-processed`, on every primary |
+| A finished result the captain called routine but only main could land | reached main as a captain outcome after the fix below; Cursor and Claude landed it without telling the captain, as asked |
+| Main busy when a new row arrived | main's drain claimed it first and the host handed that wake back with `main already claimed these wake rows` (OpenCode) |
+| The engine failing (Claude, a lab wrapper exiting 3) | the first failure handed its wake back; the second added `the supervision session is paused after repeated engine errors`; a close inside the 120-second cooldown passed through with no engine call; a failed probe doubled the cooldown to 240 seconds; a successful probe exited with `the supervision session recovered after a successful probe` |
+| `/quiet` | `bin/fm-afk-launch.sh quiet-check` printed its statement and no record or daemon was written, on every primary |
+| Away | the away record and no daemon; the gated finish was a captain outcome `per your away instructions:` with main parked; after the return the brief listed it and the drain presented it until main acknowledged it |
+| Codex main restarted mid-session | its first close resurfaced to main as `check: rearm-resurface` and the mirror re-keyed to the new session |
+
+The Pi primary, without the file, ran the same attended, away, and return session on its in-process branch with the changed branch prompt: the branch reported a finished local-only branch as a captain outcome for main to land, and main landed and acknowledged each one.
+
+Fixed on the branch from these sessions:
+
+- A finished local-only branch the captain called routine was reported routine, and a rebased branch waiting for main to land it was reported routine four times, which left main, the only actor that may land it while attended, unaware; the branch prompt now makes anything main must act on a captain outcome, even when the captain asked not to hear about it or an earlier outcome already told main.
+- Claude's Stop-hook rewakes and Grok's background-task completions were mirrored as captain text; the mirror drops both wrappers.
+- Codex mid-turn captain messages never reached the mirror; Codex's hooks now read the rollout transcript.
+- Main drains on a host home paid three validated store reads; the drain now makes one.
+
+Not fixed here:
+
+- Codex's 180-second attended checkpoint returns to main at every boundary, so main still takes a turn per boundary and noticed and landed one finished worker itself between checkpoints.
+- The first captain prompt of a Grok or OpenCode session is not mirrored, because the session acquires the fleet lock during that first turn; main's reply to it is mirrored.
+
+Deterministic entry points:
+
+```sh
+tests/fm-supervision-host.test.sh
+tests/fm-host-mirror.test.sh
+tests/fm-branch-supervision.test.sh
+tests/fm-pi-watch-extension.test.sh
+tests/fm-afk-launch.test.sh
+tests/fm-turnend-guard.test.sh
+```
+
 ## Wedge-alarm channels
 
 The two real notification channels were bounded manually on 2026-07-10 on macOS 26.5.2 with Herdr 0.7.3.
