@@ -10,7 +10,7 @@ The host is opt-in per home through `config/supervision-host`; [configuration.md
 Without the file every home behaves exactly as it does without the host.
 Today it runs beside a Claude, Cursor, OpenCode, omp, Grok, or Codex primary, in both postures ("Postures" below):
 
-- Attended (no away-posture record `state/.afk-contract`), the engine takes the wakes the Pi branch would take and keeps routine outcomes off main; every other close reaches main exactly as the plain watcher arm delivers it.
+- Attended (no away-posture record `state/.afk-contract`), the engine takes the wakes the Pi branch would take and never wakes main for a routine outcome; every other close reaches main exactly as the plain watcher arm delivers it.
 - Away (the record exists), the host hands each close to the engine, and main stays parked unless the host hands the wake back.
 - `/afk` launches no away daemon on an opted-in home of those harnesses, because the host is the away session there.
 - `/quiet` needs nothing where the attended host runs, because the attended posture already is quiet mode; `bin/fm-afk-launch.sh quiet-check` decides, and a quiet entry refuses there.
@@ -87,7 +87,8 @@ Main drains, and `bin/fm-wake-drain.sh` presents every unprocessed captain outco
 Every later drain, including the session-start digest, presents them again until main acknowledges them, so an ignored outcome costs no extra turns and is never lost.
 The section runs only for main on an opted-in home whose primary is not Pi, and never while the away record exists; after the return it presents the away window's captain outcomes, which the return brief also listed, as the Pi branch does after a return.
 An unprocessed captain outcome is never adopted as processed, so a home that opts in mid-session cannot lose its first one; outcomes recorded before this section existed are presented once more, the safe direction.
-Routine outcomes never reach main; they stay in `bin/fm-branch-outcome.sh list`.
+Routine outcomes never open a main turn: the next drain lists each once, above the captain outcomes and with nothing to acknowledge, the way the Pi branch's routine notes reach main's transcript without a turn, and silent fleet reviews never appear.
+A finished piece of work only main may complete while attended, such as a local-only branch to land or a pull request to merge, is a captain outcome even when the captain asked not to hear about that work (`bin/fm-branch-prompt.sh` "Verdict: routine or captain"), because a routine outcome would leave it waiting for main's next drain.
 
 ## The broken-session latch
 

@@ -390,7 +390,7 @@ test_branch_outcomes_only_on_an_opted_in_home_off_pi() {
 }
 
 test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main() {
-  local home first
+  local home first drained
   home=$(make_home attended-routine attended)
   start_host "$home"
   wait_until 150 watcher_live "$home" || fail "attended: the host never started a watcher cycle: $(cat "$home/host.out")"
@@ -410,7 +410,14 @@ test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main() {
   [ "$(grep -cv '^watcher: started pid=' "$home/host.out")" -eq 0 ] \
     || fail "a routine attended outcome printed more than the first cycle's status to main: $(cat "$home/host.out")"
   watcher_live "$home" || fail "the host is not parked on a live successor after an attended wake"
-  pass "host: an attended wake the branch may take is handled on the engine, and its routine outcome never reaches main"
+  drained=$(FM_HOME="$home" "$ROOT/bin/fm-wake-drain.sh" 2>&1)
+  assert_contains "$drained" "BRANCH OUTCOMES, ROUTINE (handled by the supervision session since your last drain" \
+    "main's next drain must list the routine outcome for awareness"
+  assert_contains "$drained" "[seq 1] demo: stub handled demo" "the routine listing must carry the outcome"
+  assert_not_contains "$drained" "mark-processed" "a routine outcome must ask for no acknowledgement"
+  drained=$(FM_HOME="$home" "$ROOT/bin/fm-wake-drain.sh" 2>&1)
+  assert_not_contains "$drained" "[seq 1]" "a routine outcome must be listed only once"
+  pass "host: an attended wake the branch may take is handled on the engine, and its routine outcome never wakes main"
 }
 
 test_attended_captain_outcome_reaches_main_through_branch_outcomes() {

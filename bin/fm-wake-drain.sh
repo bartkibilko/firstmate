@@ -4,8 +4,8 @@
 # annotate every unread line for validated signal status keys, surface unread
 # informational status lines, latest captain-facing statuses not covered by a
 # newer branch outcome, OPEN DECISIONS, captain-call record divergence, and on
-# a supervision-host home the unprocessed captain outcomes (BRANCH OUTCOMES),
-# then assert liveness.
+# a supervision-host home the supervision session's new and unprocessed
+# outcomes (BRANCH OUTCOMES), then assert liveness.
 #
 # Keep sequence-bound row consumption independent from generation-bound episode
 # retirement; docs/watcher-continuity.md owns the recovery contract.
@@ -552,23 +552,26 @@ EOF
   printf 'RECORD DIVERGENCE: reconcile each one - record the captain'"'"'s own words with bin/fm-captain-hold.sh answer <task> --decision-file <path>, or re-open the status decision when that resolution was not the captain'"'"'s word.\n' || return 1
 }
 
-# Print BRANCH OUTCOMES: every captain outcome the supervision host's session
-# recorded that main has not acknowledged yet (docs/supervision-host.md
-# "Captain outcomes"). Off Pi this presentation is what the Pi branch's
-# sequence-keyed visible entry is: it advances the store's read cursor through
-# the captain rows it presents, so bin/fm-branch-outcome.sh mark-processed
-# accepts main's acknowledgement, and it presents every unprocessed captain row
-# again on every drain until main acknowledges it. Routine rows never appear.
-# An unprocessed captain row is always presented, never adopted as processed,
-# so a home that opts in mid-session cannot lose its first captain outcome;
-# the cost is that rows recorded before this section existed are presented
-# once more. It runs only for main, only on a home opted into the
-# supervision host whose primary is not Pi (the Pi branch extension owns this
-# path there), and never while the away-posture record exists, because those
-# outcomes wait for the return. Bounded like OPEN DECISIONS, silent when
-# nothing is unprocessed, and never fails the drain.
+# Print BRANCH OUTCOMES: what the supervision host's session recorded since
+# main last drained (docs/supervision-host.md "Captain outcomes"). Off Pi this
+# presentation is what the Pi branch's transcript entries are. Routine outcomes
+# are listed once, for awareness, the way the Pi branch's routine notes reach
+# main's transcript without a turn; silent fleet reviews never appear. Every
+# unprocessed captain outcome is listed with the exact
+# bin/fm-branch-outcome.sh mark-processed acknowledgement, on every drain until
+# main acknowledges it. The presentation advances the store's read cursor
+# through the rows it read, which is what lets mark-processed accept main's
+# acknowledgement and keeps a routine row from repeating. An unprocessed
+# captain row is always presented, never adopted as processed, so a home that
+# opts in mid-session cannot lose its first captain outcome; the cost is that
+# rows recorded before this section existed are presented once more. It runs
+# only for main, only on a home opted into the supervision host whose primary
+# is not Pi (the Pi branch extension owns this path there), and never while the
+# away-posture record exists, because those outcomes wait for the return.
+# Bounded like OPEN DECISIONS, silent when nothing is new or unprocessed, and
+# never fails the drain.
 print_branch_outcomes_section() {
-  local config outcome unread through rows seq task summary line max=0
+  local config outcome unread through rows seq task summary line max=0 routine=''
   local output='' used=0 shown=0 omitted=0 bytes item_bytes=600 global_bytes=4000
   [ "$ACTOR" = main ] || return 0
   config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
@@ -582,11 +585,39 @@ print_branch_outcomes_section() {
     printf 'BRANCH OUTCOMES SKIPPED: the outcome store could not be read safely; repair it before relying on this section.\n'
     return 0
   fi
-  through=$(printf '%s\n' "$unread" | jq -r 'select(.verdict == "captain") | .seq' 2>/dev/null | tail -n 1)
-  if [ -n "$through" ] && ! "$outcome" mark-read --through "$through" >/dev/null 2>&1; then
-    printf 'BRANCH OUTCOMES SKIPPED: the outcome store refused to advance its read cursor; retry on the next drain.\n'
-    return 0
+  if [ -n "$unread" ]; then
+    routine=$(printf '%s\n' "$unread" | jq -r 'select(.verdict == "routine" and .silent != true)
+      | "[seq \(.seq)] \(.task): \(.summary | gsub("[\t\n\r]"; " "))"' 2>/dev/null)
+    through=$(printf '%s\n' "$unread" | jq -r '.seq' 2>/dev/null | tail -n 1)
+    if [ -n "$through" ] && ! "$outcome" mark-read --through "$through" >/dev/null 2>&1; then
+      printf 'BRANCH OUTCOMES SKIPPED: the outcome store refused to advance its read cursor; retry on the next drain.\n'
+      return 0
+    fi
   fi
+  if [ -n "$routine" ]; then
+    # Newest first under the cap, printed oldest first.
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      fm_cap_line_var "$line" $((item_bytes - 1))
+      line=$FM_LINE_CAP_LINE
+      bytes=$(( ${#line} + 1 ))
+      if [ "$omitted" -gt 0 ] || [ $((used + bytes)) -gt 2000 ]; then
+        omitted=$((omitted + 1))
+        continue
+      fi
+      output="$line
+$output"
+      used=$((used + bytes))
+    done <<ROWS
+$(printf '%s\n' "$routine" | awk '{ line[NR] = $0 } END { for (i = NR; i >= 1; i--) print line[i] }')
+ROWS
+    printf 'BRANCH OUTCOMES, ROUTINE (handled by the supervision session since your last drain; for your awareness, nothing to acknowledge):\n'
+    [ "$omitted" -eq 0 ] || printf 'BRANCH OUTCOMES, ROUTINE: %d older omitted (byte cap; bin/fm-branch-outcome.sh list has them)\n' "$omitted"
+    printf '%s' "$output"
+  fi
+  output=''
+  used=0
+  omitted=0
   if ! rows=$("$outcome" unprocessed 2>/dev/null); then
     printf 'BRANCH OUTCOMES SKIPPED: the outcome store could not be read safely; repair it before relying on this section.\n'
     return 0
@@ -611,7 +642,7 @@ print_branch_outcomes_section() {
 $(printf '%s\n' "$rows" | jq -r '[.seq, .task, (.summary | gsub("[\t\n\r]"; " "))] | @tsv' 2>/dev/null)
 ROWS
   [ "$shown" -gt 0 ] || return 0
-  printf 'BRANCH OUTCOMES (captain outcomes the supervision session recorded for you, oldest first - process each as firstmate: tell the captain, answer or escalate a decision, or act on a blocker):\n'
+  printf 'BRANCH OUTCOMES (captain outcomes the supervision session recorded for you, oldest first - process each as firstmate: tell the captain, land or merge what is ready, answer or escalate a decision, or act on a blocker):\n'
   printf '%s' "$output"
   if [ "$omitted" -gt 0 ]; then
     printf 'BRANCH OUTCOMES: %d newer omitted (byte cap); they follow on the next drain\n' "$omitted"
