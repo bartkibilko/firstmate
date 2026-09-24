@@ -15,7 +15,10 @@
 # message's text where the surface sees messages), never tool traffic. A
 # prompt the shared operational-input protocol classifies
 # (bin/fm-operational-input.sh: watcher wakes, guard follow-ups, launch briefs)
-# is fleet machinery, not dialog, and is dropped.
+# is fleet machinery, not dialog, and is dropped, and so is a prompt that opens
+# with the <task-notification> wrapper a harness puts around a turn it started
+# itself: Claude submits its Stop-hook rewake that way, with no other field to
+# tell it from a typed prompt (tests/fm-host-mirror-live-e2e.test.sh proves it).
 # Every writer is a silent no-op unless this home opted into the supervision
 # host (config/supervision-host, checked before anything else runs), the hook
 # runs in a genuine primary checkout, and this session holds the fleet lock, so
@@ -123,7 +126,12 @@ append_entry() {  # <captain|main> <text> [<id>]
   local tag=$1 text=$2 id=${3:-} key last seq tmp
   text=$(printf '%s' "$text" | sed -e 's/[[:space:]]*$//')
   [ -n "$(printf '%s' "$text" | tr -d '[:space:]')" ] || return 0
-  if [ "$tag" = captain ] && operational "$text"; then return 0; fi
+  if [ "$tag" = captain ]; then
+    case "${text#"${text%%[![:space:]]*}"}" in
+      '<task-notification>'*) return 0 ;;
+    esac
+    ! operational "$text" || return 0
+  fi
   key=$(fm_supervision_host_main_key "$STATE")
   fm_lock_acquire_wait "$LOCK" || return 0
   if [ -n "$id" ] && [ -f "$MIRROR" ] \

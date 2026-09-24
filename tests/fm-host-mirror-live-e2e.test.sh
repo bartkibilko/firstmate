@@ -13,9 +13,11 @@
 # narrows the set, and FM_HOST_MIRROR_LIVE_OPENCODE_MODEL picks OpenCode's
 # model (default opencode/big-pickle). An absent harness is reported, never
 # passed over silently, and a run that checked no harness fails. Cursor and
-# Grok fire project hooks only in an interactive session, and OpenCode's
-# headless run exits before its plugin sees the session go idle, so those three
-# run in a private tmux server; Claude and Codex run headless.
+# Grok fire project hooks only in an interactive session, OpenCode's headless
+# run exits before its plugin sees the session go idle, and Claude must show
+# that its Stop-hook rewake, which it submits as a prompt, is not mirrored as
+# the captain's words, so those four run in a private tmux server; Codex runs
+# headless.
 # shellcheck disable=SC2016 # single-quoted scripts expand inside their own shells
 set -u
 
@@ -87,14 +89,26 @@ check() {  # <harness> <version> <root>
 # harness, so the lock holder is the harness that fires the hooks.
 LOCKED_EXEC='printf "%s\n" "$$" > state/.lock; exec "$@"'
 
+# Claude runs interactively with one extra Stop hook that rewakes the session
+# once, as the supervision host's own handback does, so the guard also proves
+# that a harness-started turn is never mirrored as the captain's words.
 run_claude() {
-  local root version
-  version=$(claude --version 2>/dev/null | head -n 1)
+  local root
   root=$(make_primary claude)
-  (cd "$root" && perl -e 'alarm 300; exec @ARGV' sh -c "$LOCKED_EXEC" sh claude -p "$PROMPT" --model haiku </dev/null) \
-    > "$LAB/claude.out" 2>&1 || fail "claude $version: the prompt failed: $(tail -5 "$LAB/claude.out")"
-  wait_mirrored "$root" 20 || true
-  check claude "$version" "$root"
+  cat > "$root/rewake-once.sh" <<'SH'
+#!/usr/bin/env bash
+cat >/dev/null
+dir=$(cd "$(dirname "$0")" && pwd)
+[ ! -e "$dir/rewake.done" ] || exit 0
+: > "$dir/rewake.done"
+sleep 2
+echo "lab rewake: reply with exactly the word mirror-rewake-ok" >&2
+exit 2
+SH
+  chmod +x "$root/rewake-once.sh"
+  jq '.hooks.Stop += [{hooks: [{type: "command", command: "\"$CLAUDE_PROJECT_DIR\"/rewake-once.sh", asyncRewake: true, timeout: 60}]}]' \
+    "$root/.claude/settings.json" > "$root/.claude/settings.json.tmp" && mv "$root/.claude/settings.json.tmp" "$root/.claude/settings.json"
+  REWAKE_WANTED=mirror-rewake-ok run_interactive claude claude --model haiku --dangerously-skip-permissions
 }
 
 run_codex() {
@@ -114,7 +128,8 @@ run_interactive() {  # <harness> <command> [arguments...]
   local harness=$1 command=$2 root version i screen
   shift 2
   version=$("$command" --version 2>/dev/null | head -n 1)
-  root=$(make_primary "$harness")
+  root="$LAB/$harness"
+  [ -d "$root" ] || root=$(make_primary "$harness")
   tmux -L "$SOCKET" new-session -d -s "$harness" -x 200 -y 50 -c "$root" \
     "sh -c '$LOCKED_EXEC' sh $command $*" || fail "$harness $version: the tmux session did not start"
   i=0
@@ -122,6 +137,8 @@ run_interactive() {  # <harness> <command> [arguments...]
     screen=$(tmux -L "$SOCKET" capture-pane -p -t "$harness" 2>/dev/null)
     case "$screen" in
       *'[a] Trust this workspace'*) tmux -L "$SOCKET" send-keys -t "$harness" a ;;
+      *'Yes, I trust this folder'*) tmux -L "$SOCKET" send-keys -t "$harness" Down; sleep 0.5; tmux -L "$SOCKET" send-keys -t "$harness" Enter ;;
+      *'bypass permissions on'*) break ;;
       *'Do you trust the contents of this directory'*) tmux -L "$SOCKET" send-keys -t "$harness" y ;;
       *'Plan, search, build'*|*'Grok Build'*|*'ctrl+p'*|*'tab agents'*) break ;;
     esac
@@ -134,6 +151,15 @@ run_interactive() {  # <harness> <command> [arguments...]
   tmux -L "$SOCKET" send-keys -t "$harness" Enter
   if ! wait_mirrored "$root" 180; then
     tmux -L "$SOCKET" capture-pane -p -t "$harness" > "$LAB/$harness.screen" 2>/dev/null || true
+  fi
+  if [ -n "${REWAKE_WANTED:-}" ]; then
+    i=0
+    while [ "$i" -lt 240 ] && ! mirrored "$root" main "$REWAKE_WANTED"; do sleep 0.5; i=$((i + 1)); done
+    mirrored "$root" main "$REWAKE_WANTED" || fail "$harness $version: the rewake turn never ran, so the guard proved nothing about it"
+    if jq -r 'select(.tag == "captain") | .text' "$root/state/.host-mirror.jsonl" | grep -E 'task-notification|lab rewake|Stop hook' >/dev/null; then
+      fail "$harness $version: a Stop-hook rewake was mirrored as the captain's words: $(cat "$root/state/.host-mirror.jsonl")"
+    fi
+    printf 'ok - %s %s: a Stop-hook rewake turn was not mirrored as the captain'"'"'s words\n' "$harness" "$version"
   fi
   tmux -L "$SOCKET" kill-session -t "$harness" >/dev/null 2>&1 || true
   check "$harness" "$version" "$root"

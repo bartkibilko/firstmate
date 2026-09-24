@@ -114,11 +114,13 @@ test_operational_foreign_and_unowned_input_is_dropped() {
       | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude
     printf "%s" "{\"hook_event_name\":\"PreToolUse\",\"prompt\":\"not dialog\"}" \
       | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude
+    printf "%s" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"\\n\\n<task-notification>\\n<summary>Stop hook feedback</summary>\\n</task-notification>\"}" \
+      | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude
     printf "%s" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"kept\"}" \
       | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude
   ' || fail "a writer failed"
   assert_equals "captain|kept" "$(entries "$home")" \
-    "operational input, a Cursor payload on the Claude registration, and a non-dialog event must not be mirrored"
+    "operational input, a harness-started turn, a Cursor payload on the Claude registration, and a non-dialog event must not be mirrored"
 
   other=$(make_home unowned)
   sleep 30 &
@@ -127,7 +129,7 @@ test_operational_foreign_and_unowned_input_is_dropped() {
     | FM_HOME="$other" FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$FAKE_CLAUDE" -c '"$0" hook claude' "$MIRROR"
   kill "$(cat "$other/state/.lock")" 2>/dev/null || true
   assert_absent "$other/state/.host-mirror.jsonl" "a session that does not hold the fleet lock must mirror nothing"
-  pass "mirror: operational input, a foreign host's payload, other events, and a session without the lock are never mirrored"
+  pass "mirror: operational input, a harness-started turn, a foreign host's payload, other events, and a session without the lock are never mirrored"
 }
 
 test_entries_are_deduplicated_and_capped() {
