@@ -126,6 +126,47 @@ main|Will do." "$(entries "$home")" \
   pass "mirror: Codex's hooks read its rollout transcript, so a mid-turn steer is mirrored once and injected items never are"
 }
 
+# Non-host invariance: on a home without config/supervision-host, every surface
+# this rung added - each tracked mirror registration, the OpenCode writer's
+# append, the drain's BRANCH OUTCOMES, and the quiet check - prints nothing and
+# leaves the home's state byte-for-byte as it was, even when the home holds an
+# outcome store with an unprocessed captain row (a home that once ran a host).
+test_home_without_the_flag_is_untouched() {
+  local home before after drained quiet status
+  home=$(make_home without-flag 0)
+  FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" append --task demo --verdict captain --summary 'PR ready' >/dev/null \
+    || fail "fixture: could not record a captain outcome"
+  # The fixture's own session lock is written by as_session, not by a writer.
+  snapshot() { (cd "$1/state" && find . -type f ! -name .lock | LC_ALL=C sort | while IFS= read -r f; do printf '%s %s\n' "$f" "$(cksum < "$f")"; done); }
+  before=$(snapshot "$home")
+  CLAUDE_PROMPT=$(claude_cmd UserPromptSubmit) CLAUDE_STOP=$(claude_cmd Stop) \
+  CODEX_PROMPT=$(codex_cmd UserPromptSubmit) CODEX_POST=$(codex_cmd PostToolUse) CODEX_STOP=$(codex_cmd Stop) \
+  GROK_PROMPT=$(grok_cmd UserPromptSubmit) GROK_STOP=$(grok_cmd Stop) \
+  CURSOR_PROMPT=$(cursor_cmd beforeSubmitPrompt) CURSOR_RESPONSE=$(cursor_cmd afterAgentResponse) \
+  as_session "$home" '
+    run() { printf "%s" "$2" | env CLAUDE_PROJECT_DIR="$PRIMARY_ROOT" CURSOR_PROJECT_DIR="$PRIMARY_ROOT" \
+      GROK_WORKSPACE_ROOT="$PRIMARY_ROOT" bash -c "cd \"$PRIMARY_ROOT\" && $1"; }
+    for cmd in "$CLAUDE_PROMPT" "$CODEX_PROMPT" "$GROK_PROMPT" "$CURSOR_PROMPT"; do
+      run "$cmd" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"hello\",\"transcript_path\":\"$FM_HOME/missing.jsonl\"}"
+    done
+    for cmd in "$CLAUDE_STOP" "$CODEX_POST" "$CODEX_STOP" "$GROK_STOP" "$CURSOR_RESPONSE"; do
+      run "$cmd" "{\"hook_event_name\":\"Stop\",\"last_assistant_message\":\"hi\",\"text\":\"hi\"}"
+    done
+    printf "hello" | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" append captain --id m1
+  ' > "$home/writers.out" 2>&1 || fail "a mirror registration failed on a home without the flag: $(cat "$home/writers.out")"
+  [ ! -s "$home/writers.out" ] || fail "a mirror registration printed on a home without the flag: $(cat "$home/writers.out")"
+  after=$(snapshot "$home")
+  assert_equals "$before" "$after" "a mirror writer changed the state of a home without the flag"
+
+  drained=$(FM_HOME="$home" "$FAKE_CLAUDE" -c '"$0" 2>&1' "$ROOT/bin/fm-wake-drain.sh")
+  assert_not_contains "$drained" "BRANCH OUTCOMES" "a home without the flag must drain without branch outcomes"
+  assert_absent "$home/state/.branch-outcomes-cursor" "a home without the flag must keep its outcome cursor untouched"
+  quiet=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" CLAUDECODE=1 "$ROOT/bin/fm-afk-launch.sh" quiet-check 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] && [ -z "$quiet" ] || fail "the quiet check answered on a home without the flag (rc=$status): $quiet"
+  pass "mirror: a home without the flag is untouched by every writer, the drain section, and the quiet check"
+}
+
 test_writers_are_inert_without_the_opt_in() {
   local home crew out
   home=$(make_home no-opt-in 0)
@@ -238,6 +279,7 @@ test_verified_writers() {
 test_every_harness_registration_writes_the_mirror
 test_codex_hooks_read_the_rollout_transcript
 test_writers_are_inert_without_the_opt_in
+test_home_without_the_flag_is_untouched
 test_operational_foreign_and_unowned_input_is_dropped
 test_entries_are_deduplicated_and_capped
 test_feed_resumes_reanchors_and_is_bounded
