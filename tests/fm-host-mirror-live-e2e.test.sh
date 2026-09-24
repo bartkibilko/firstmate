@@ -120,7 +120,7 @@ SH
 # read can mirror it before the turn ends.
 run_codex() {
   STEER_PROMPT='Run the shell command sleep 30 before you reply, and reply with exactly the word mirror-ok.' \
-    STEER_TEXT='Also add the word steer-ok to that reply.' \
+    STEER_TEXT='Also add the word steer-ok to that reply.' STEER_WHEN='esc to interrupt' \
     run_interactive codex codex --dangerously-bypass-approvals-and-sandbox -c "model_reasoning_effort=\"low\""
 }
 
@@ -166,13 +166,19 @@ run_interactive() {  # <harness> <command> [arguments...]
   sleep 1
   tmux -L "$SOCKET" send-keys -t "$harness" Enter
   if [ -n "${STEER_TEXT:-}" ]; then
-    sleep 12
+    # Type the steer only once the turn is visibly inside its tool call.
+    i=0
+    while [ "$i" -lt 180 ] && ! tmux -L "$SOCKET" capture-pane -p -t "$harness" 2>/dev/null | grep -F "$STEER_WHEN" >/dev/null; do
+      sleep 0.5
+      i=$((i + 1))
+    done
+    sleep 2
     tmux -L "$SOCKET" send-keys -t "$harness" -l "$STEER_TEXT"
     sleep 1
     tmux -L "$SOCKET" send-keys -t "$harness" Enter
     i=0
     while [ "$i" -lt 240 ] && ! mirrored "$root" captain "$STEER_TEXT"; do sleep 0.5; i=$((i + 1)); done
-    mirrored "$root" captain "$STEER_TEXT" || fail "$harness $version: a captain message typed during a running turn was not mirrored"
+    mirrored "$root" captain "$STEER_TEXT" || fail "$harness $version: a captain message typed during a running turn was not mirrored"$'\n'"--- mirror"$'\n'"$(cat "$root/state/.host-mirror.jsonl" 2>/dev/null)"$'\n'"--- pane"$'\n'"$(tmux -L "$SOCKET" capture-pane -p -t "$harness" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -30)"
     printf 'ok - %s %s: a captain message typed during a running turn was mirrored\n' "$harness" "$version"
   fi
   if ! wait_mirrored "$root" 180; then
