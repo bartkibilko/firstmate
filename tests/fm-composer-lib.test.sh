@@ -637,8 +637,16 @@ test_matrix_opencode_leftbar_signals() {
   # turn row above the active composer also pins the incident's idle layout.
   captured_idle=$'  ▣ Build · Big Pickle · 3.4s\n\n  ┃\n  ┃  '"${ESC}[38;2;128;128;128mAsk anything… \"Fix a TODO in the codebase\"${ESC}[38;2;255;255;255m"$'\n  ┃\n  ┃  Build · Big Pickle OpenCode Zen\n  ╹▀▀▀▀▀▀▀▀'
   assert_screen "opencode 1.18.30 completed-turn idle hint on tmux" empty "$CAPS_TMUX" "$captured_idle" 3
+  assert_screen "opencode 1.18.32 shortcut row on herdr" empty "$CAPS_STYLED" \
+    "$captured_idle"$'\n       tab agents  ctrl+p commands\n\n  ● Tip Run /connect to add an AI provider'
   captured_pending=$'  ▣ Build · Big Pickle · 3.4s\n\n  ┃\n  ┃  '"${ESC}[38;2;255;255;255mReply with OK.${ESC}[38;2;255;255;255m"$'\n  ┃\n  ┃  Build · Big Pickle OpenCode Zen\n  ╹▀▀▀▀▀▀▀▀'
   assert_screen "opencode 1.18.30 completed-turn typed composer on tmux" pending "$CAPS_TMUX" "$captured_pending" 3
+  assert_screen "opencode 1.18.32 typed composer above shortcut row on herdr" pending "$CAPS_STYLED" \
+    "$captured_pending"$'\n       tab agents  ctrl+p commands'
+  assert_screen "opencode unclaimed activity below shortcut row on herdr" unknown "$CAPS_STYLED" \
+    "$captured_idle"$'\n       tab agents  ctrl+p commands\nWorking on request...'
+  assert_screen "opencode shortcut row without the composer floor is unproved" unknown "$CAPS_STYLED" \
+    $'┃\n┃  Ask anything… "Fix a TODO in the codebase"\n┃\n┃  Build · Big Pickle OpenCode Zen\n       tab agents  ctrl+p commands'
   # Signal separation: with the idle pattern overridden to something that
   # cannot match, a DIM-styled hint still proves empty through the ghost strip.
   out=$(FM_COMPOSER_IDLE_RE='^NEVER-MATCHES$' fm_composer_classify_screen "$CAPS_TMUX" "$dim_screen" 1)

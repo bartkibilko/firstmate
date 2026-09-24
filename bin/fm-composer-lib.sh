@@ -1319,6 +1319,14 @@ _fm_composer_leftbar_floor_row() {  # <trimmed-row>
   [ -z "${blocks//▀/}" ]
 }
 
+# OpenCode 1.18.32 draws this shortcut row immediately below its left-bar
+# floor. It is outside the input area but contiguous with the composer, so a
+# cursorless capture must skip exactly this row before the staleness probe.
+_fm_composer_opencode_shortcuts_row() {  # <trimmed-row>
+  fm_composer_idle_matches "$1" \
+    '^tab[[:space:]]+agents[[:space:]]+ctrl\+p[[:space:]]+commands$' sensitive
+}
+
 # _fm_composer_row_is_composer_furniture: 0 when <trimmed-row> is DEMONSTRABLY
 # a harness's own furniture drawn below its composer, given <proof-glyph> - the
 # agent glyph that proved the envelope above it. Exactly four things qualify,
@@ -1410,7 +1418,7 @@ _fm_composer_locate_footer_zone() {  # <plain>
 }
 
 _fm_composer_select_cursorless() {
-  local plain=$1 generic=-1 next boundary raw trimmed glyph bare footer=0
+  local plain=$1 generic=-1 next boundary raw trimmed glyph bare footer=0 leftbar_floor=0
   FM_COMPOSER_SELECTED_KIND=
   FM_COMPOSER_SELECTED_FIRST=-1
   FM_COMPOSER_SELECTED_LAST=-1
@@ -1497,6 +1505,7 @@ _fm_composer_select_cursorless() {
       fm_composer_normalize_trim_var trimmed
       if _fm_composer_leftbar_floor_row "$trimmed"; then
         boundary=$next
+        leftbar_floor=1
       fi
     fi
     # The same footer zone, read from the other side: rows this envelope's own
@@ -1505,6 +1514,14 @@ _fm_composer_select_cursorless() {
     next=$((boundary + 1))
     if [ "$footer" = 1 ] && [ "$FM_COMPOSER_FOOTER_AFTER" = "$boundary" ]; then
       next=$((FM_COMPOSER_FOOTER_LAST + 1))
+    fi
+    if [ "$FM_COMPOSER_SELECTED_KIND" = leftbar ] && [ "$leftbar_floor" = 1 ]; then
+      raw=$(_fm_composer_screen_row "$next" "$plain")
+      trimmed=$raw
+      fm_composer_normalize_trim_var trimmed
+      if _fm_composer_opencode_shortcuts_row "$trimmed"; then
+        next=$((next + 1))
+      fi
     fi
     raw=$(_fm_composer_screen_row "$next" "$plain")
     trimmed=$raw

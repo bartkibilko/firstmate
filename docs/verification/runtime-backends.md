@@ -712,6 +712,25 @@ Cursor is deliberately outside this cursor-anchored empty-composer matrix becaus
 
 `zellij action dump-screen --pane-id <id> --ansi` was verified at zellij 0.44.0 to preserve ANSI styling (real Claude Code rendered inside a zellij pane dumped `ESC[m` `❯` U+00A0 for its idle composer row), which is the capability the zellij composer classifier reads.
 
+### 2026-09-24 OpenCode 1.18.32 permissions and composer footer
+
+`opencode --version` returned `1.18.32`.
+In an isolated temporary project, `opencode.json` set `*`, `edit`, `bash`, and `external_directory` to `ask`, with `bash` holding both `*` and `git *` ask patterns.
+The installed binary resolved explicit environment overrides after those project rules:
+
+```sh
+OPENCODE_PERMISSION='{"*":"allow","edit":"allow","bash":"allow","external_directory":"allow"}' opencode debug config --pure | jq -c '.permission | {"*": .["*"], edit, bash, external_directory}'
+```
+
+```text
+{"*":"allow","edit":"allow","bash":"allow","external_directory":"allow"}
+```
+
+OpenCode's [v1.18.32 config loader](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/config/config.ts#L2543-L2569) applies this variable after the loaded config, and its [permission schema](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/core/src/v1/config/permission.ts#L318-L355) lists the named keys.
+A local OpenCode 1.18.32 TUI capture on an isolated tmux socket showed `tab agents  ctrl+p commands` directly below the left-bar composer's `╹▀` floor.
+`bin/fm-test-run.sh tests/fm-composer-lib.test.sh tests/fm-backend-herdr.test.sh tests/fm-spawn-dispatch-profile.test.sh` checks that the generated launch carries all named overrides and that the Herdr adapter reports `empty` for the idle capture, `pending` for typed input, and `unknown` for unclaimed activity below the shortcut row.
+A real OpenCode 1.18.32 pane through Herdr has not been checked for this change; the adapter result above uses a captured-screen fixture and fake CLI.
+
 ### 2026-09-20 claude 2.1.236 statusLine footer through Herdr
 
 Verified on 2026-09-20 on macOS arm64 (Darwin 25.6.0) against Claude Code 2.1.236 running as Firstmate workers in Herdr 0.8.0 panes, read through Herdr's ANSI capture with its exact capability descriptor (`styled=1`, `cursor=0`, `identity=1`, `rows=20`).
