@@ -88,6 +88,44 @@ main|cursor main" "$out" "every tracked registration must write its captain prom
   pass "mirror: the Claude, Codex, Grok, and Cursor registrations each write the captain's prompt and main's reply"
 }
 
+# A supervising Codex main stays inside one turn, so a captain message typed
+# then is a mid-turn steer that only its rollout transcript records; the
+# per-tool-call hook reads that transcript.
+test_codex_hooks_read_the_rollout_transcript() {
+  local home rollout
+  home=$(make_home codex-rollout)
+  rollout="$home/rollout.jsonl"
+  item() {  # <role> <text>
+    jq -cn --arg role "$1" --arg text "$2" \
+      '{type: "response_item", payload: {type: "message", role: $role, content: [{type: (if $role == "assistant" then "output_text" else "input_text" end), text: $text}]}}'
+  }
+  {
+    jq -cn '{type: "session_meta", payload: {}}'
+    item developer 'developer instructions'
+    item user '# AGENTS.md instructions for /home/fleet'
+    item user '<environment_context>cwd</environment_context>'
+    item user 'Dispatch the export worker.'
+    item assistant 'Captain, dispatching it now.'
+    jq -cn '{type: "response_item", payload: {type: "function_call", name: "exec_command"}}'
+  } > "$rollout"
+  ROLLOUT=$rollout CODEX_POST=$(codex_cmd PostToolUse) CODEX_STOP=$(codex_cmd Stop) as_session "$home" '
+    run() { printf "%s" "$2" | bash -c "cd \"$PRIMARY_ROOT\" && $1"; }
+    run "$CODEX_POST" "{\"hook_event_name\":\"PostToolUse\",\"transcript_path\":\"$ROLLOUT\"}"
+    { jq -cn --arg t "Also tell me when export finishes." "{type: \"response_item\", payload: {type: \"message\", role: \"user\", content: [{type: \"input_text\", text: \$t}]}}"
+      jq -cn --arg t "<hook_prompt hook_run_id=\"stop:1\">guard</hook_prompt>" "{type: \"response_item\", payload: {type: \"message\", role: \"user\", content: [{type: \"input_text\", text: \$t}]}}"
+      jq -cn --arg t "Will do." "{type: \"response_item\", payload: {type: \"message\", role: \"assistant\", content: [{type: \"output_text\", text: \$t}]}}"
+    } >> "$ROLLOUT"
+    run "$CODEX_POST" "{\"hook_event_name\":\"PostToolUse\",\"transcript_path\":\"$ROLLOUT\"}"
+    run "$CODEX_STOP" "{\"hook_event_name\":\"Stop\",\"transcript_path\":\"$ROLLOUT\",\"last_assistant_message\":\"Will do.\"}"
+  ' || fail "a Codex mirror hook failed"
+  assert_equals "captain|Dispatch the export worker.
+main|Captain, dispatching it now.
+captain|Also tell me when export finishes.
+main|Will do." "$(entries "$home")" \
+    "the Codex hooks must mirror the transcript's typed prompts, steers, and replies once each, without Codex's own injected items"
+  pass "mirror: Codex's hooks read its rollout transcript, so a mid-turn steer is mirrored once and injected items never are"
+}
+
 test_writers_are_inert_without_the_opt_in() {
   local home crew out
   home=$(make_home no-opt-in 0)
@@ -196,6 +234,7 @@ test_verified_writers() {
 }
 
 test_every_harness_registration_writes_the_mirror
+test_codex_hooks_read_the_rollout_transcript
 test_writers_are_inert_without_the_opt_in
 test_operational_foreign_and_unowned_input_is_dropped
 test_entries_are_deduplicated_and_capped

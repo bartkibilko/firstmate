@@ -8,9 +8,13 @@
 # mirror file, its cursor, and the feed.
 #
 # WRITERS. Each primary's code-owned turn surfaces append here, never the
-# model: Claude, Codex, and Grok through their prompt-submit and Stop hooks,
-# Cursor through its beforeSubmitPrompt and afterAgentResponse hooks, and
-# OpenCode through its TUI plugin. A writer appends captain text (the submitted
+# model: Claude and Grok through their prompt-submit and Stop hooks, Cursor
+# through its beforeSubmitPrompt and afterAgentResponse hooks, OpenCode through
+# its TUI plugin, and Codex through its prompt-submit, per-tool-call, and Stop
+# hooks reading the session's own rollout transcript, because a supervising
+# Codex main stays inside one turn across its foreground checkpoints and a
+# captain message typed then reaches it as a mid-turn steer that fires no
+# prompt-submit or Stop hook. A writer appends captain text (the submitted
 # prompt) and MAIN text (the turn's final assistant message, or each assistant
 # message's text where the surface sees messages), never tool traffic. A
 # prompt the shared operational-input protocol classifies
@@ -19,6 +23,9 @@
 # with the <task-notification> wrapper a harness puts around a turn it started
 # itself: Claude submits its Stop-hook rewake that way, with no other field to
 # tell it from a typed prompt (tests/fm-host-mirror-live-e2e.test.sh proves it).
+# In a Codex transcript the user items Codex adds itself open with a wrapper
+# tag or with its AGENTS.md preamble and are dropped the same way; the
+# transcript's read position is $STATE/.host-mirror-codex ("<path>\t<lines>").
 # Every writer is a silent no-op unless this home opted into the supervision
 # host (config/supervision-host, checked before anything else runs), the hook
 # runs in a genuine primary checkout, and this session holds the fleet lock, so
@@ -129,6 +136,7 @@ append_entry() {  # <captain|main> <text> [<id>]
   if [ "$tag" = captain ]; then
     case "${text#"${text%%[![:space:]]*}"}" in
       '<task-notification>'*) return 0 ;;
+      '<'*|'# AGENTS.md instructions'*) [ "$SOURCE_HARNESS" != codex ] || return 0 ;;
     esac
     ! operational "$text" || return 0
   fi
@@ -157,11 +165,50 @@ append_entry() {  # <captain|main> <text> [<id>]
   fm_lock_release "$LOCK"
 }
 
+# Mirror the user and assistant messages a Codex rollout transcript gained
+# since the last read, each keyed to its transcript line so a re-read records
+# nothing twice. Returns 1 when the payload names no readable transcript.
+codex_transcript() {  # <payload>
+  local path record from=1 total entry tag id text
+  path=$(printf '%s' "$1" | jq -r '.transcript_path // empty' 2>/dev/null)
+  [ -n "$path" ] && [ -f "$path" ] && [ -r "$path" ] || return 1
+  record="$STATE/.host-mirror-codex"
+  if [ "$(cut -f1 "$record" 2>/dev/null)" = "$path" ]; then
+    from=$(cut -f2 "$record" 2>/dev/null)
+    case "$from" in ''|*[!0-9]*) from=1 ;; esac
+  fi
+  total=$(wc -l < "$path" | tr -d ' ')
+  case "$total" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$from" -le "$((total + 1))" ] || from=1
+  [ "$from" -le "$total" ] || return 0
+  sed -n "${from},${total}p" "$path" | awk -v first="$from" '{ print (first + NR - 1) "\t" $0 }' \
+    | jq -Rc --arg file "$(basename "$path")" '
+        (split("\t") | {n: .[0], item: (.[1:] | join("\t") | fromjson?)})
+        | select(.item.type == "response_item" and .item.payload.type == "message"
+            and (.item.payload.role == "user" or .item.payload.role == "assistant"))
+        | {tag: (if .item.payload.role == "user" then "captain" else "main" end),
+           id: "\($file):\(.n)",
+           text: ([.item.payload.content[]? | (.text // "")] | join("\n"))}' 2>/dev/null \
+    | while IFS= read -r entry; do
+        tag=$(printf '%s' "$entry" | jq -r .tag)
+        id=$(printf '%s' "$entry" | jq -r .id)
+        text=$(printf '%s' "$entry" | jq -r .text)
+        append_entry "$tag" "$text" "$id"
+      done
+  printf '%s\t%s\n' "$path" "$((total + 1))" > "$record" 2>/dev/null || true
+}
+
+SOURCE_HARNESS=
 case "$1" in
   hook)
     [ "$#" -eq 2 ] || exit 0
+    SOURCE_HARNESS=$2
     PAYLOAD=$(cat 2>/dev/null || true)
     [ -n "$PAYLOAD" ] || exit 0
+    if [ "$2" = codex ]; then
+      writer_in_scope || exit 0
+      codex_transcript "$PAYLOAD" && exit 0
+    fi
     if [ "$2" = claude ]; then
       # shellcheck source=bin/fm-hook-host-lib.sh
       . "$SCRIPT_DIR/fm-hook-host-lib.sh"

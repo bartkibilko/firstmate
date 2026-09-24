@@ -69,7 +69,7 @@ mirrored() {  # <root> <tag> <fixed text>
 wait_mirrored() {  # <root> <seconds>
   local i=0
   while [ "$i" -lt "$(( $2 * 2 ))" ]; do
-    mirrored "$1" captain "$PROMPT" && mirrored "$1" main mirror-ok && return 0
+    mirrored "$1" captain "${STEER_PROMPT:-$PROMPT}" && mirrored "$1" main mirror-ok && return 0
     sleep 0.5
     i=$((i + 1))
   done
@@ -77,7 +77,7 @@ wait_mirrored() {  # <root> <seconds>
 }
 
 check() {  # <harness> <version> <root>
-  if mirrored "$3" captain "$PROMPT" && mirrored "$3" main mirror-ok; then
+  if mirrored "$3" captain "${STEER_PROMPT:-$PROMPT}" && mirrored "$3" main mirror-ok; then
     printf 'ok - %s %s: the tracked registrations mirrored the captain prompt and main reply\n' "$1" "$2"
     CHECKED=$((CHECKED + 1))
     return 0
@@ -111,15 +111,14 @@ SH
   REWAKE_WANTED=mirror-rewake-ok run_interactive claude claude --model haiku --dangerously-skip-permissions
 }
 
+# Codex runs interactively and receives a captain message while its turn is
+# still running a tool, as a supervising Codex main always is: that steer fires
+# no prompt-submit or Stop hook, so only the per-tool-call hook's transcript
+# read can mirror it before the turn ends.
 run_codex() {
-  local root version
-  version=$(codex --version 2>/dev/null | head -n 1)
-  root=$(make_primary codex)
-  (cd "$root" && perl -e 'alarm 300; exec @ARGV' sh -c "$LOCKED_EXEC" sh codex exec --dangerously-bypass-hook-trust \
-    --skip-git-repo-check -c 'model_reasoning_effort="low"' "$PROMPT" </dev/null) \
-    > "$LAB/codex.out" 2>&1 || fail "codex $version: the prompt failed: $(tail -5 "$LAB/codex.out")"
-  wait_mirrored "$root" 20 || true
-  check codex "$version" "$root"
+  STEER_PROMPT='Run the shell command sleep 30 before you reply, and reply with exactly the word mirror-ok.' \
+    STEER_TEXT='Also add the word steer-ok to that reply.' \
+    run_interactive codex codex --dangerously-bypass-approvals-and-sandbox -c "model_reasoning_effort=\"low\""
 }
 
 # An interactive session in a private tmux server: answer a trust prompt when
@@ -135,20 +134,35 @@ run_interactive() {  # <harness> <command> [arguments...]
   i=0
   while [ "$i" -lt 60 ]; do
     screen=$(tmux -L "$SOCKET" capture-pane -p -t "$harness" 2>/dev/null)
+    # A key sent to a dialog is followed by a pause long enough for the
+    # harness to redraw, so the same dialog is never answered twice.
     case "$screen" in
-      *'[a] Trust this workspace'*) tmux -L "$SOCKET" send-keys -t "$harness" a ;;
-      *'Yes, I trust this folder'*) tmux -L "$SOCKET" send-keys -t "$harness" Down; sleep 0.5; tmux -L "$SOCKET" send-keys -t "$harness" Enter ;;
+      *'[a] Trust this workspace'*) tmux -L "$SOCKET" send-keys -t "$harness" a; sleep 3 ;;
+      *'Yes, I trust this folder'*|*'Trust all and continue'*)
+        tmux -L "$SOCKET" send-keys -t "$harness" Down; sleep 0.5; tmux -L "$SOCKET" send-keys -t "$harness" Enter; sleep 3 ;;
+      *'1. Yes, continue'*) tmux -L "$SOCKET" send-keys -t "$harness" Enter; sleep 3 ;;
+      *'Ask Codex to do anything'*) break ;;
       *'bypass permissions on'*) break ;;
-      *'Do you trust the contents of this directory'*) tmux -L "$SOCKET" send-keys -t "$harness" y ;;
+      *'Do you trust the contents of this directory'*) tmux -L "$SOCKET" send-keys -t "$harness" y; sleep 3 ;;
       *'Plan, search, build'*|*'Grok Build'*|*'ctrl+p'*|*'tab agents'*) break ;;
     esac
     sleep 1
     i=$((i + 1))
   done
   sleep 3
-  tmux -L "$SOCKET" send-keys -t "$harness" -l "$PROMPT"
+  tmux -L "$SOCKET" send-keys -t "$harness" -l "${STEER_PROMPT:-$PROMPT}"
   sleep 1
   tmux -L "$SOCKET" send-keys -t "$harness" Enter
+  if [ -n "${STEER_TEXT:-}" ]; then
+    sleep 12
+    tmux -L "$SOCKET" send-keys -t "$harness" -l "$STEER_TEXT"
+    sleep 1
+    tmux -L "$SOCKET" send-keys -t "$harness" Enter
+    i=0
+    while [ "$i" -lt 240 ] && ! mirrored "$root" captain "$STEER_TEXT"; do sleep 0.5; i=$((i + 1)); done
+    mirrored "$root" captain "$STEER_TEXT" || fail "$harness $version: a captain message typed during a running turn was not mirrored"
+    printf 'ok - %s %s: a captain message typed during a running turn was mirrored\n' "$harness" "$version"
+  fi
   if ! wait_mirrored "$root" 180; then
     tmux -L "$SOCKET" capture-pane -p -t "$harness" > "$LAB/$harness.screen" 2>/dev/null || true
   fi
