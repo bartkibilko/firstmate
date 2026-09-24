@@ -809,8 +809,9 @@ unit_native_lifecycle() {
 }
 
 # A Claude home opted into the supervision host has the host as its away
-# session, so away mode launches no daemon there; quiet mode still does, and a
-# plain refresh of a running quiet daemon is still allowed.
+# session, so away mode launches no daemon there; its attended host already is
+# quiet mode, so a fresh quiet entry launches nothing either, while a quiet
+# daemon that already runs keeps refreshing until /quiet off.
 unit_supervision_host_claude_home_runs_no_away_daemon() {
   local st out rc
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-host.XXXXXX")
@@ -825,13 +826,26 @@ unit_supervision_host_claude_home_runs_no_away_daemon() {
   else
     fail "supervision host: away start-native did not refuse cleanly (rc=$rc): $out"
   fi
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_MODE=quiet "$LAUNCH" start-native 2>&1)
+  rc=$?
+  if [ "$rc" -eq 0 ] || [ -e "$st/state/.afk" ] \
+    || ! printf '%s' "$out" | grep -F 'quiet mode launches no daemon on this claude home' >/dev/null; then
+    fail "supervision host: a fresh quiet start-native on a claude host home must launch nothing (rc=$rc): $out"
+  fi
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" quiet-check 2>&1)
+  rc=$?
+  if [ "$rc" -ne 0 ] || ! printf '%s' "$out" | grep -F 'Quiet mode needs nothing on this home' >/dev/null; then
+    fail "supervision host: quiet-check must say quiet mode needs nothing on a claude host home (rc=$rc): $out"
+  fi
+  printf 'quiet\n%s\n' "$(date +%s)" > "$st/state/.afk"
   if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_MODE=quiet "$LAUNCH" start-native >/dev/null 2>&1 \
     && [ "$(head -n 1 "$st/state/.afk")" = quiet ] \
     && FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" start-native >/dev/null 2>&1 \
-    && [ "$(head -n 1 "$st/state/.afk")" = quiet ]; then
-    pass "supervision host: quiet start-native and a plain refresh of the quiet daemon still prepare the daemon"
+    && [ "$(head -n 1 "$st/state/.afk")" = quiet ] \
+    && ! FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" quiet-check >/dev/null 2>&1; then
+    pass "supervision host: quiet mode launches nothing on a claude host home, and a quiet daemon that already runs keeps refreshing"
   else
-    fail "supervision host: quiet mode was refused or lost its mode on a claude host home"
+    fail "supervision host: a running quiet daemon on a claude host home was refused or lost its mode"
   fi
   FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1 || true
   rm -rf "$st"
@@ -858,10 +872,26 @@ unit_supervision_host_other_harnesses_run_no_away_daemon() {
     [ "$rc" -ne 0 ] || fail "$harness: an opted-in home must refuse the away daemon"
     printf '%s' "$out" | grep -F "not launched on this $harness home, which runs the supervision host" >/dev/null \
       || fail "$harness: the refusal must name the host: $out"
-    daemon_allowed "$harness" quiet >/dev/null || fail "$harness: quiet mode must still launch the daemon on an opted-in home"
+    daemon_allowed "$harness" quiet >/dev/null \
+      || fail "$harness: quiet mode must still launch the daemon on an opted-in home whose file selects no engine"
   done
   daemon_allowed kimi >/dev/null || fail "kimi has no arm owner to run the host, so it must keep the away daemon"
-  pass "supervision host: away mode on an opted-in cursor, opencode, omp, grok, or codex home launches no daemon"
+  printf 'claude\n' > "$st/config/supervision-host"
+  for harness in cursor opencode grok codex; do
+    out=$(daemon_allowed "$harness" quiet); rc=$?
+    [ "$rc" -ne 0 ] || fail "$harness: quiet mode must launch no daemon where the attended host runs"
+    printf '%s' "$out" | grep -F "quiet mode launches no daemon on this $harness home" >/dev/null \
+      || fail "$harness: the quiet refusal must say the attended host already is quiet: $out"
+  done
+  daemon_allowed omp quiet >/dev/null || fail "omp has no verified dialog mirror, so quiet mode must keep the daemon"
+  rm -f "$st/state/.afk-contract"
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_TEST_HARNESS=cursor FM_AFK_MODE=quiet \
+    bash -c '. "$1"; fm_afk_launch_primary_harness() { printf "%s" "$FM_TEST_HARNESS"; }; fm_afk_launch_main enter --words "stay quiet"' _ "$LAUNCH" 2>&1)
+  rc=$?
+  if [ "$rc" -ne 3 ] || [ -e "$st/state/.afk-contract" ]; then
+    fail "a quiet entry where the attended host runs must write no away record, which would park a present captain (rc=$rc): $out"
+  fi
+  pass "supervision host: away mode on an opted-in cursor, opencode, omp, grok, or codex home launches no daemon, nor does quiet mode where the attended host runs"
 
   enter_with() {  # <harness> <config line or ->
     rm -f "$st/state/.afk-contract" "$st/config/supervision-host"

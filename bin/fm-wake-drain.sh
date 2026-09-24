@@ -3,7 +3,8 @@
 # optionally acknowledge handled records,
 # annotate every unread line for validated signal status keys, surface unread
 # informational status lines, latest captain-facing statuses not covered by a
-# newer branch outcome, OPEN DECISIONS, and captain-call record divergence,
+# newer branch outcome, OPEN DECISIONS, captain-call record divergence, and on
+# a supervision-host home the unprocessed captain outcomes (BRANCH OUTCOMES),
 # then assert liveness.
 #
 # Keep sequence-bound row consumption independent from generation-bound episode
@@ -551,6 +552,73 @@ EOF
   printf 'RECORD DIVERGENCE: reconcile each one - record the captain'"'"'s own words with bin/fm-captain-hold.sh answer <task> --decision-file <path>, or re-open the status decision when that resolution was not the captain'"'"'s word.\n' || return 1
 }
 
+# Print BRANCH OUTCOMES: every captain outcome the supervision host's session
+# recorded that main has not acknowledged yet (docs/supervision-host.md
+# "Captain outcomes"). Off Pi this presentation is what the Pi branch's
+# sequence-keyed visible entry is: it advances the store's read cursor through
+# the captain rows it presents, so bin/fm-branch-outcome.sh mark-processed
+# accepts main's acknowledgement, and it presents every unprocessed captain row
+# again on every drain until main acknowledges it. Routine rows never appear.
+# An unprocessed captain row is always presented, never adopted as processed,
+# so a home that opts in mid-session cannot lose its first captain outcome;
+# the cost is that rows recorded before this section existed are presented
+# once more. It runs only for main, only on a home opted into the
+# supervision host whose primary is not Pi (the Pi branch extension owns this
+# path there), and never while the away-posture record exists, because those
+# outcomes wait for the return. Bounded like OPEN DECISIONS, silent when
+# nothing is unprocessed, and never fails the drain.
+print_branch_outcomes_section() {
+  local config outcome unread through rows seq task summary line max=0
+  local output='' used=0 shown=0 omitted=0 bytes item_bytes=600 global_bytes=4000
+  [ "$ACTOR" = main ] || return 0
+  config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
+  [ -f "$config/supervision-host" ] || return 0
+  [ -s "$STATE/branch-outcomes.jsonl" ] || return 0
+  [ ! -f "$STATE/.afk-contract" ] || return 0
+  case "$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null)" in pi|pi-signed) return 0 ;; esac
+  command -v jq >/dev/null 2>&1 || return 0
+  outcome="$SCRIPT_DIR/fm-branch-outcome.sh"
+  if ! unread=$("$outcome" unread 2>/dev/null); then
+    printf 'BRANCH OUTCOMES SKIPPED: the outcome store could not be read safely; repair it before relying on this section.\n'
+    return 0
+  fi
+  through=$(printf '%s\n' "$unread" | jq -r 'select(.verdict == "captain") | .seq' 2>/dev/null | tail -n 1)
+  if [ -n "$through" ] && ! "$outcome" mark-read --through "$through" >/dev/null 2>&1; then
+    printf 'BRANCH OUTCOMES SKIPPED: the outcome store refused to advance its read cursor; retry on the next drain.\n'
+    return 0
+  fi
+  if ! rows=$("$outcome" unprocessed 2>/dev/null); then
+    printf 'BRANCH OUTCOMES SKIPPED: the outcome store could not be read safely; repair it before relying on this section.\n'
+    return 0
+  fi
+  [ -n "$rows" ] || return 0
+  while IFS=$(printf '\t') read -r seq task summary; do
+    case "$seq" in ''|*[!0-9]*) continue ;; esac
+    line="[seq $seq] $task: $summary"
+    fm_cap_line_var "$line" $((item_bytes - 1))
+    line=$FM_LINE_CAP_LINE
+    bytes=$(( ${#line} + 1 ))
+    if [ "$omitted" -gt 0 ] || [ $((used + bytes)) -gt "$global_bytes" ]; then
+      omitted=$((omitted + 1))
+      continue
+    fi
+    output="$output$line
+"
+    used=$((used + bytes))
+    shown=$((shown + 1))
+    max=$seq
+  done <<ROWS
+$(printf '%s\n' "$rows" | jq -r '[.seq, .task, (.summary | gsub("[\t\n\r]"; " "))] | @tsv' 2>/dev/null)
+ROWS
+  [ "$shown" -gt 0 ] || return 0
+  printf 'BRANCH OUTCOMES (captain outcomes the supervision session recorded for you, oldest first - process each as firstmate: tell the captain, answer or escalate a decision, or act on a blocker):\n'
+  printf '%s' "$output"
+  if [ "$omitted" -gt 0 ]; then
+    printf 'BRANCH OUTCOMES: %d newer omitted (byte cap); they follow on the next drain\n' "$omitted"
+  fi
+  printf 'BRANCH OUTCOMES: after processing them run bin/fm-branch-outcome.sh mark-processed --through %s; until then every drain presents them again\n' "$max"
+}
+
 print_status_sections() {
   local snapshot=${1:-} fully_presented=${2:-} acknowledged prepared
   if [ -z "$snapshot" ]; then snapshot=$(status_presentation_snapshot "$STATE") || return 1; fi
@@ -783,6 +851,7 @@ if [ ! -s "$FM_WAKE_QUEUE" ]; then
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   DRAIN_LOCK_HELD=false
   (print_status_presentation) || true
+  print_branch_outcomes_section || true
   if [ "$RECOVERY_ACK_REQUIRED" = true ]; then
     printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation %s\n' "${RECOVERY_MARKER_TOKEN##*:}" >&2
   fi
@@ -804,6 +873,7 @@ if [ "$ACTOR" = main ]; then
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
     DRAIN_LOCK_HELD=false
     (print_status_presentation) || true
+    print_branch_outcomes_section || true
     assert_watcher_liveness
     exit 0
   fi
@@ -866,5 +936,6 @@ printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --a
   "$ACK_THROUGH" "${RECOVERY_MARKER_TOKEN##*:}" >&2
 
 (print_status_presentation "$RAW_ROWS") || true
+print_branch_outcomes_section || true
 assert_watcher_liveness
 exit 0

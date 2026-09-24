@@ -103,6 +103,15 @@ EOF
   return 0
 }
 
+# fm_supervision_host_main_key <state-dir>: print the key of the current main
+# session, which changes at every main session start: the session-lock holder
+# and a checksum of its session sidecar. The host keys its engine conversation
+# to it, and the dialog mirror (bin/fm-host-mirror.sh) keys each entry to it.
+fm_supervision_host_main_key() {
+  printf '%s:%s\n' "$(sed -n '1p' "$1/.lock" 2>/dev/null)" \
+    "$(sed -n '1p' "$1/.lock-session" 2>/dev/null | cksum | awk '{ print $1 }')"
+}
+
 # fm_supervision_engine_bin <engine>: print the executable, or fail with a
 # plain reason on stderr.
 fm_supervision_engine_bin() {

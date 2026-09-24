@@ -99,7 +99,9 @@ Both choices are local to each Firstmate home and are not part of secondmate inh
 ## Supervision host (config/supervision-host)
 
 The optional local, gitignored `config/supervision-host` opts this home into the supervision host, which runs the supervision branch's contract on a headless engine session beside a non-Pi primary; [docs/supervision-host.md](supervision-host.md) owns the design, its current scope, and the verified engines.
-Today a Claude, Cursor, OpenCode, omp, Grok, or Codex primary runs it, and only for the away posture: with the file present, that primary's arm owner runs the host in the watcher arm's place, the host handles wakes on the engine while the away-posture record `state/.afk-contract` exists, and `/afk` launches no away daemon on that home, while `/quiet` still does.
+Today a Claude, Cursor, OpenCode, omp, Grok, or Codex primary runs it: with the file present, that primary's arm owner runs the host in the watcher arm's place, and the host handles on the engine the attended wakes the Pi branch would take (on a primary with a verified dialog mirror, which omp does not have yet) and every wake while the away-posture record `state/.afk-contract` exists.
+`/afk` launches no away daemon on that home, and `/quiet` needs nothing where the attended host runs, while an omp home's `/quiet` still launches the daemon.
+The same file turns on the primary's dialog-mirror hooks (`bin/fm-host-mirror.sh`), which write nothing on a home without it.
 Absence leaves the home exactly as it is without the host, on every harness; a Pi primary keeps its in-process supervision branch whether or not the file exists.
 A Grok primary reads the file when its session-start block renders, so a change takes effect at its next session start; every other owner reads it at every arm.
 The file may be empty, or hold one line `<engine> [<model>]`:
@@ -110,6 +112,7 @@ The file may be empty, or hold one line `<engine> [<model>]`:
 Only Claude has a verified engine of its own, so a Cursor, OpenCode, omp, Grok, or Codex home names `claude` in the file.
 
 An engine that is not verified, a primary with no verified engine, or a malformed line leaves the host with no engine: it takes no wake, every wake reaches main as it would without the host, and each away-posture wake carries a line naming the problem.
+The same holds for every wake while the engine's session is cooling down after repeated engine errors ([supervision-host.md](supervision-host.md#the-broken-session-latch)).
 The file is read at every wake, so a change applies at the next one without a restart.
 It is local to each home and not part of secondmate inherited configuration.
 While the file exists, main's lease-checked commands also take the per-task lease lock, so a claim by the host's engine cannot race a mutation main already started (`bin/fm-lease-lib.sh`).
@@ -1325,6 +1328,8 @@ FM_SUPERVISION_HOST_PARK_SECONDS=27000   # the host ends its park with a cycle-b
 FM_SUPERVISION_HOST_TURN_TIMEOUT=1200    # bound on one engine turn; a turn that hits it hands its wake to main
 FM_SUPERVISION_HOST_ROTATE_TURNS=20      # the engine conversation starts fresh after this many turns (and at every main session start)
 FM_SUPERVISION_ENGINE_GRACE=30           # seconds between TERM and KILL when an engine turn is stopped
+FM_SUPERVISION_HOST_COOLDOWN=300         # first cooldown after two consecutive engine errors latch the session; each failed probe doubles it
+FM_SUPERVISION_HOST_COOLDOWN_MAX=3600    # cap on the doubled cooldown
 # spoken interface and captain inbox; see "Spoken interface and captain inbox" above
 FM_VOICE_REGION=        # overrides config/voice-region for one relay run
 FM_VOICE_MODEL=         # overrides config/voice-model for one relay run

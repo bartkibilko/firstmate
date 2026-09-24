@@ -2,7 +2,8 @@
 name: quiet
 description: >-
   Enter quiet supervision mode when the captain invokes /quiet or asks for quiet mode, quiet-while-present, or fewer routine wake turns while they stay in the session.
-  It sets the same durable away/quiet-mode flag as /afk, in `quiet` mode, so the sub-supervisor daemon self-handles routine wakes and escalates captain-relevant events exactly as away mode does, but ordinary captain chat does NOT exit it - only an explicit `/quiet off` does.
+  On Pi and on a home whose attended supervision host runs, it enters nothing and tells the captain the attended posture already is quiet mode.
+  Elsewhere it sets the same durable away/quiet-mode flag as /afk, in `quiet` mode, so the sub-supervisor daemon self-handles routine wakes and escalates captain-relevant events exactly as away mode does, but ordinary captain chat does NOT exit it - only an explicit `/quiet off` does.
 user-invocable: true
 metadata:
   internal: true
@@ -22,6 +23,13 @@ The only things quiet mode changes are which mode the flag declares and what
 exits it.
 
 ## What it does
+
+0. **First run `bin/fm-afk-launch.sh quiet-check`.**
+   It exits 0 with one line when quiet mode needs nothing on this home: on Pi, and on a home whose attended supervision host runs (`docs/supervision-host.md` "Postures"), the ordinary supervision session already handles the wakes it can while the captain is present and keeps routine outcomes out of this conversation, so the attended posture already is quiet mode.
+   Then enter nothing - no record, no daemon, no flag - and tell the captain in `AGENTS.md` section 9 language that supervision here already works that way: routine fleet events stay off this conversation, while decisions, failures, credentials, and review-ready work still reach them.
+   `/quiet off` then needs nothing either.
+   A quiet `enter`, `start`, or `start-native` refuses on such a home, so the steps below never run there.
+   When it exits 1, continue with step 1.
 
 1. **Enter the lifecycle through `bin/fm-afk-launch.sh`, exactly as `/afk`
    does, with `FM_AFK_MODE=quiet` set first.**
