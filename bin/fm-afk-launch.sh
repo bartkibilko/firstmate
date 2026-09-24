@@ -23,15 +23,14 @@
 # engine, because every away wake then reaches main. Every other harness still
 # runs the daemon for now, so `start` and `start-native` require the record
 # `enter` wrote before they launch the daemon.
-# QUIET MODE needs nothing where the ordinary supervision session already keeps
-# the wakes it handles off main while the captain is present: on Pi, and on a
-# home whose attended supervision host runs (docs/supervision-host.md
-# "Postures": the home opted in, names a usable engine, and the primary has a
-# verified dialog mirror). `quiet-check` answers that before a quiet entry
-# writes anything, and a quiet `enter`, `start`, or `start-native` refuses
-# there too, so a quiet entry can never leave an away record that would park
-# a present captain's main. A quiet daemon already running on such a home keeps
-# running until `/quiet off`.
+# QUIET MODE needs nothing on a home whose attended supervision host runs
+# (docs/supervision-host.md "Postures": the home opted in, names a usable
+# engine, and the primary has a verified dialog mirror), because that host
+# already keeps the wakes it handles off main while the captain is present.
+# `quiet-check` answers that before a quiet entry writes anything, and a quiet
+# `enter`, `start`, or `start-native` refuses there too, so a quiet entry can
+# never leave an away record that would park a present captain's main. A quiet
+# daemon already running on such a home keeps running until `/quiet off`.
 # `stop` (the return, driven by bin/fm-afk-return.sh) shuts the daemon down,
 # clears state/.afk last, and archives the record under state/afk-contracts/.
 #
@@ -217,13 +216,12 @@ fm_afk_launch_host_primary() {  # <harness>
 }
 
 # True when quiet mode needs nothing on this home (the header's QUIET MODE):
-# on Pi, or where the attended supervision host runs, unless a quiet daemon
-# from an earlier entry already runs here.
+# where the attended supervision host runs, unless a quiet daemon from an
+# earlier entry already runs here.
 fm_afk_launch_quiet_needs_nothing() {
   local harness config
   [ ! -e "$FM_AFK_LAUNCH_STATE/.afk" ] || return 1
   harness=$(fm_afk_launch_primary_harness)
-  case "$harness" in pi|pi-signed) return 0 ;; esac
   fm_afk_launch_host_primary "$harness" || return 1
   config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
   [ -f "$config/supervision-host" ] || return 1
