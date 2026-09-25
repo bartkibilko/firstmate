@@ -107,6 +107,24 @@ EOF
 # session, which changes at every main session start: the session-lock holder
 # and a checksum of its session sidecar. The host keys its engine conversation
 # to it, and the dialog mirror (bin/fm-host-mirror.sh) keys each entry to it.
+# fm_supervision_host_attended_ready <config-dir> <primary-harness>
+# 0 when the attended host may take any close on this home: it opted in with a
+# usable engine, node runs the dispatch owner, and the primary has a verified
+# dialog mirror (bin/fm-host-mirror.sh). Otherwise 1, with
+# FM_SUPERVISION_HOST_UNREADY naming why. The host's attended acceptor and
+# quiet mode (bin/fm-afk-launch.sh) share it.
+fm_supervision_host_attended_ready() {
+  FM_SUPERVISION_HOST_UNREADY=
+  if ! fm_supervision_host_config "$1" "$2" || [ -z "$FM_SUPERVISION_ENGINE" ]; then
+    FM_SUPERVISION_HOST_UNREADY="no supervision engine"
+  elif ! command -v node >/dev/null 2>&1; then
+    FM_SUPERVISION_HOST_UNREADY="node is missing"
+  elif ! "$(dirname "${BASH_SOURCE[0]}")/fm-host-mirror.sh" verified "$2"; then
+    FM_SUPERVISION_HOST_UNREADY="no verified dialog mirror for $2"
+  fi
+  [ -z "$FM_SUPERVISION_HOST_UNREADY" ]
+}
+
 fm_supervision_host_main_key() {
   printf '%s:%s\n' "$(sed -n '1p' "$1/.lock" 2>/dev/null)" \
     "$(sed -n '1p' "$1/.lock-session" 2>/dev/null | cksum | awk '{ print $1 }')"

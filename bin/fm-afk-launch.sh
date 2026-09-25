@@ -25,7 +25,8 @@
 # `enter` wrote before they launch the daemon.
 # QUIET MODE needs nothing on a home whose attended supervision host runs
 # (docs/supervision-host.md "Postures": the home opted in, names a usable
-# engine, and the primary has a verified dialog mirror), because that host
+# engine, node is on PATH, and the primary has a verified dialog mirror,
+# fm_supervision_host_attended_ready), because that host
 # already keeps the wakes it handles off main while the captain is present.
 # While its broken-session latch holds, until a probe succeeds, `quiet-check`
 # says instead that the session is paused, that routine wakes reach main until
@@ -230,9 +231,7 @@ fm_afk_launch_quiet_needs_nothing() {
   [ -f "$config/supervision-host" ] || return 1
   # shellcheck source=bin/fm-supervision-engine-lib.sh
   . "$FM_AFK_LAUNCH_DIR/fm-supervision-engine-lib.sh" || return 1
-  fm_supervision_host_config "$config" "$harness" || return 1
-  [ -n "$FM_SUPERVISION_ENGINE" ] || return 1
-  "$FM_AFK_LAUNCH_DIR/fm-host-mirror.sh" verified "$harness"
+  fm_supervision_host_attended_ready "$config" "$harness"
 }
 
 fm_afk_launch_quiet_statement() {

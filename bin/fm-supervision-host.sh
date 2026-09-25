@@ -896,12 +896,8 @@ turn_captain_seqs() {  # <turn>
 attended_acceptor() {  # <first-reason-line>
   local offer
   ATTENDED_WHY=
-  if ! fm_supervision_host_config "$CONFIG" "$PRIMARY" || [ -z "$FM_SUPERVISION_ENGINE" ]; then
-    ATTENDED_WHY="no supervision engine"
-  elif ! command -v node >/dev/null 2>&1; then
-    ATTENDED_WHY="node is missing"
-  elif ! "$SCRIPT_DIR/fm-host-mirror.sh" verified "$PRIMARY"; then
-    ATTENDED_WHY="no verified dialog mirror for $PRIMARY"
+  if ! fm_supervision_host_attended_ready "$CONFIG" "$PRIMARY"; then
+    ATTENDED_WHY=$FM_SUPERVISION_HOST_UNREADY
   elif health_cooling; then
     ATTENDED_WHY="the supervision session is cooling down after engine errors"
   elif ! offer=$(printf '%s\n' "$1" | node "$SCRIPT_DIR/fm-branch-dispatch.mjs" offer 2>/dev/null); then
