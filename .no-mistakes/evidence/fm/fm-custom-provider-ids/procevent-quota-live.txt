@@ -1,0 +1,22 @@
+===== base: source-id custom:foundry-ic
+error: invalid provider: custom:foundry-ic
+exit=1
+===== base: poll --provider custom:foundry-ic --threshold 100 --timeout 5 (real quota-axi, row at 100%)
+error: invalid provider: custom:foundry-ic
+exit=1
+===== target: source-id custom:foundry-ic
+quota-custom--foundry-ic
+exit=0
+===== target: poll --provider custom:foundry-ic --threshold 100 --timeout 5 (real quota-axi, row at 100%)
+quota: quota-custom--foundry-ic
+status: low
+detail: {"provider":"custom:foundry-ic","best":{"scope":"high_class_models","status":"known","effectivePercentRemaining":99,"boundedBy":["daily_total","daily_high_class"],"limitingWindowIds":["daily_high_class"],"pace":{"status":"behind","worstReservePercentPoints":29.6679,"worstReserveWindowId":"daily_high_class"},"runway":{"status":"through_reset","projectionConfidence":"established"},"selection":{"status":"known","spendPriority":1.4188}}}
+condition_polls: 242
+exit=0
+===== target adversarial: poll --provider x:y / custom: / custom:Bad
+error: invalid provider: x:y
+exit=1
+error: invalid provider: custom:
+exit=1
+error: invalid provider: custom:Bad
+exit=1

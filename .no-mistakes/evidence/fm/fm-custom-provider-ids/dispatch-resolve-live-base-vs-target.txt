@@ -1,0 +1,14 @@
+===== base (683b3eb): fm-dispatch-resolve.sh brief.md  [real quota-axi 0.1.53] =====
+error: malformed rules file: /tmp/fm-lab-custom.PKQxCg/home/config/crew-dispatch.json - rule floor needs scope, min_percent 0..100, and provider matching ^[a-z0-9]+(-[a-z0-9]+)*\z
+exit=2
+===== target (7b8df48): fm-dispatch-resolve.sh brief.md  [real quota-axi 0.1.53] =====
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 239   tokens: 400/40
+  rule: rule_1 (Routine app work that the company Foundry budget should pay )   confidence: 0.93
+  probabilities: rule_1=0.93 rule_2=0.05 default=0.02
+  note: rule matched
+  candidate: opencode:azure/gpt-5.6-sol  provider=custom:foundry-ic  scope=all_models  remaining=100%  spendPriority=1.4304  runway=through_reset  -> eligible
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=21%  spendPriority=-2.0248  runway=projected_exhaustion  -> eligible
+  profile: --harness 'opencode' --model 'azure/gpt-5.6-sol'
+exit=0

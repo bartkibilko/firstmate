@@ -1,0 +1,17 @@
+===== base: ordinary rules, real quota-axi snapshot (contains custom:foundry-ic) =====
+dispatch-resolve: error (quota-axi --json returned an invalid snapshot)
+dispatch-resolve:
+  status: error
+  reason: quota-axi --json returned an invalid snapshot
+exit=0
+===== target: ordinary rules, real quota-axi snapshot (contains custom:foundry-ic) =====
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 21   tokens: 300/30
+  rule: rule_1 (A simple bug fix with a stated root cause.)   confidence: 0.91
+  probabilities: rule_1=0.91 rule_2=0.06 default=0.03
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=20%  spendPriority=-2.067  runway=projected_exhaustion  -> eligible
+  candidate: codex:gpt-5.6-sol  provider=codex  scope=all_models  remaining=21%  spendPriority=-1.0364  runway=projected_exhaustion  -> eligible
+  profile: --harness 'codex' --model 'gpt-5.6-sol'
+exit=0

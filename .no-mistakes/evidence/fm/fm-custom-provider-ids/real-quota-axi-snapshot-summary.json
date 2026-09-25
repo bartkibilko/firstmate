@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 5,
+  "providerIds": [
+    "claude",
+    "codex",
+    "cursor",
+    "copilot",
+    "grok",
+    "kimi",
+    "zai",
+    "agy",
+    "alibaba",
+    "opencode-go",
+    "commandcode",
+    "minimax",
+    "mimo",
+    "deepseek",
+    "openrouter",
+    "elevenlabs",
+    "devin",
+    "custom:foundry-ic"
+  ],
+  "customRow": {
+    "provider": "custom:foundry-ic",
+    "state": {
+      "status": "fresh",
+      "stale": false
+    },
+    "quotaSemantics": {
+      "status": "known",
+      "effectiveAvailability": [
+        {
+          "scope": "all_models",
+          "status": "known",
+          "effectivePercentRemaining": 100,
+          "runway": "through_reset",
+          "spendPriority": 1.4296
+        },
+        {
+          "scope": "high_class_models",
+          "status": "known",
+          "effectivePercentRemaining": 100,
+          "runway": "through_reset",
+          "spendPriority": 1.4296
+        }
+      ]
+    }
+  }
+}
