@@ -156,6 +156,10 @@ append_entry() {  # <captain|main> <text> [<id>]
   fi
   key=$(fm_supervision_host_main_key "$STATE")
   fm_lock_acquire_wait "$LOCK" || return 0
+  if [ -e "$MIRROR" ] && ! chmod 600 "$MIRROR" 2>/dev/null; then
+    fm_lock_release "$LOCK"
+    return 0
+  fi
   if [ -n "$id" ] && [ -f "$MIRROR" ] \
     && jq -Rne --arg id "$id" --arg tag "$tag" \
       'any(inputs | fromjson? | select(type == "object"); .id == $id and .tag == $tag)' "$MIRROR" >/dev/null 2>&1; then
@@ -171,7 +175,6 @@ append_entry() {  # <captain|main> <text> [<id>]
         else .[0:($cap / 2 | ceil)] + "\n[mirror truncated: \(length - $cap) characters omitted]\n" + .[length - ($cap / 2 | floor):]
         end;
       {seq: $seq, epoch: $epoch, key: $key, id: $id, tag: $tag, text: ($text | capped)}' >> "$MIRROR" 2>/dev/null
-  chmod 600 "$MIRROR" 2>/dev/null
   if [ "$(wc -l < "$MIRROR" 2>/dev/null | tr -d ' ')" -gt $((MIRROR_KEEP + 100)) ] 2>/dev/null; then
     tmp=$(mktemp "$MIRROR.tmp.XXXXXX" 2>/dev/null) \
       && tail -n "$MIRROR_KEEP" "$MIRROR" > "$tmp" 2>/dev/null && mv -f "$tmp" "$MIRROR" 2>/dev/null

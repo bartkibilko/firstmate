@@ -230,6 +230,26 @@ test_entries_are_deduplicated_and_capped() {
   pass "mirror: a repeated entry is recorded once, and a long entry keeps its head and tail"
 }
 
+# A chmod on PATH that records, for the mirror, its entry count and mode just
+# after the real chmod, and refuses while $FM_HOME/chmod-refuses exists.
+CHMOD_SHIM="$TMP_ROOT/chmod-shim"
+mkdir -p "$CHMOD_SHIM"
+{
+  printf '#!/usr/bin/env bash\nREAL_CHMOD=%q\n' "$(command -v chmod)"
+  cat <<'SH'
+file=${!#}
+case "$file" in
+  */.host-mirror.jsonl)
+    [ ! -e "$FM_HOME/chmod-refuses" ] || exit 1
+    "$REAL_CHMOD" "$@" || exit
+    printf '%s %s\n' "$(wc -l < "$file" | tr -d ' ')" "$(stat -c %a "$file" 2>/dev/null || stat -f %Lp "$file")" >> "$FM_HOME/chmod.log"
+    ;;
+  *) exec "$REAL_CHMOD" "$@" ;;
+esac
+SH
+} > "$CHMOD_SHIM/chmod"
+chmod +x "$CHMOD_SHIM/chmod"
+
 test_mirror_is_owner_only_under_an_open_umask() {
   local home mirror
   home=$(make_home private)
@@ -237,10 +257,16 @@ test_mirror_is_owner_only_under_an_open_umask() {
   (umask 022; as_session "$home" "$SAY"'say captain "keep this between us" p1') || fail "a writer failed"
   [ "$(mode_of "$mirror")" = 600 ] || fail "a new mirror must be owner-only, got $(mode_of "$mirror")"
   chmod 644 "$mirror"
-  (umask 022; as_session "$home" "$SAY"'say main "understood" p1') || fail "a writer failed"
-  [ "$(mode_of "$mirror")" = 600 ] || fail "an existing readable mirror must be made owner-only, got $(mode_of "$mirror")"
+  (umask 022; PATH="$CHMOD_SHIM:$PATH" as_session "$home" "$SAY"'say main "understood" p1') || fail "a writer failed"
+  [ "$(cat "$home/chmod.log" 2>/dev/null)" = "1 600" ] \
+    || fail "an existing readable mirror must be owner-only before new dialog lands, got: $(cat "$home/chmod.log" 2>/dev/null)"
+  [ "$(mode_of "$mirror")" = 600 ] || fail "an existing readable mirror must stay owner-only, got $(mode_of "$mirror")"
   [ "$(entries "$home" | wc -l | tr -d ' ')" -eq 2 ] || fail "both entries must be recorded: $(entries "$home")"
-  pass "mirror: the captain's dialog is owner-only, even when the file already existed readable by others"
+  chmod 644 "$mirror"
+  : > "$home/chmod-refuses"
+  (umask 022; PATH="$CHMOD_SHIM:$PATH" as_session "$home" "$SAY"'say captain "not for other eyes" p2') || fail "a writer failed"
+  [ "$(entries "$home" | wc -l | tr -d ' ')" -eq 2 ] || fail "dialog must not land in a mirror that could not be made owner-only: $(entries "$home")"
+  pass "mirror: the captain's dialog lands only in an owner-only mirror, even when the file already existed readable by others"
 }
 
 test_feed_resumes_reanchors_and_is_bounded() {
