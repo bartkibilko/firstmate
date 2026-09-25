@@ -767,7 +767,7 @@ Fixed on the branch from these sessions:
 - Claude's Stop-hook rewakes and Grok's background-task completions were mirrored as captain text; the mirror drops Claude's wrapper, and Grok no longer has a writer.
 - Codex mid-turn captain messages never reached the mirror; Codex's hooks now read the rollout transcript.
 - Main drains on a host home paid three validated store reads; the drain now makes one.
-- A deleted and recreated mirror restarted its numbering below the engine's cursor, so a resumed conversation skipped the new dialog; new entries now continue past both the committed and the staged cursor (the re-check below).
+- A deleted and recreated mirror restarted its numbering below the engine's cursor, so a resumed conversation skipped the new dialog; new entries now continue past both the committed and the staged cursor (`tests/fm-host-mirror.test.sh`).
 
 Not fixed here:
 
@@ -775,7 +775,7 @@ Not fixed here:
 - The first captain prompt of a Grok or OpenCode session could not be mirrored, because the session acquires the fleet lock during that first turn.
   Grok and OpenCode are therefore not verified for the attended mirror, and their writers (the Grok `UserPromptSubmit` and `Stop` registration and the OpenCode plugin's `chat.message` and `session.idle` path) were removed so no captain dialog is kept that nothing reads: the host keeps every attended close on main there, and their away posture is unchanged.
   Capturing that first prompt remains follow-up work and would reintroduce their writers.
-- On a primary with no mirror, every away wake adds one `mirror the dialog mirror could not be read; this away wake carries none` line to the host's ledger (seen on Grok and OpenCode in the re-check below); it changes nothing the engine or main sees.
+- On a primary with no mirror, every away wake adds one `mirror the dialog mirror could not be read; this away wake carries none` line to the host's ledger; it changes nothing the engine or main sees.
 
 Deterministic entry points:
 

@@ -75,7 +75,7 @@ Each primary's code-owned turn surfaces write it, never the model:
 | Codex | the session's rollout transcript, read at its `UserPromptSubmit`, `PostToolUse`, and `Stop` hooks | the same transcript |
 | Cursor | the `beforeSubmitPrompt` hook's prompt | the `afterAgentResponse` hook's text |
 
-A captain line is written the moment the prompt is submitted, and operational input (watcher wakes, guard follow-ups, launch briefs) is dropped by the shared operational-input protocol, as is a turn the harness starts itself, such as Claude's Stop-hook rewake.
+A hooked captain prompt is written when submitted, and operational input (watcher wakes, guard follow-ups, launch briefs) is dropped by the shared operational-input protocol, as is a turn the harness starts itself, such as Claude's Stop-hook rewake.
 A supervising Codex main stays inside one turn across its foreground checkpoints, so a captain message typed then reaches it as a mid-turn steer that fires no prompt or Stop hook; its transcript is the only record of it, and each tool call's hook reads what the transcript gained.
 Tool traffic is never mirrored; the engine reads files and records itself.
 A new engine conversation re-anchors on the current main session's newest entries, and a resumed one gets only what is new, so an earlier session's dialog never steers today's.
