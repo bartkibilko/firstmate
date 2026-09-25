@@ -556,6 +556,42 @@ test_attended_main_only_close_passes_straight_to_main() {
   pass "host: an attended decision close stays main's exactly as the plain arm delivers it"
 }
 
+# The captain returns after the loop accepted a decision close away but before
+# its turn starts: the turn meets the attended rule, so the close still reaches
+# main exactly as the arm printed it instead of being scoped to nothing.
+test_close_accepted_away_that_turns_attended_passes_to_main() {
+  local home real_mktemp
+  home=$(make_home away-then-attended away)
+  printf '{"hook_event_name":"UserPromptSubmit","prompt_id":"p0","prompt":"watch the fleet for me"}' > "$home/mirror-seed.0"
+  real_mktemp=$(command -v mktemp)
+  # Starting the successor arm is the first step after the loop's away check;
+  # once the decision line is queued, the captain returns there.
+  cat > "$home/fakebin/mktemp" <<SH
+#!/usr/bin/env bash
+case "\$*" in
+  *.supervision-host-arm.*)
+    ! grep -q 'which export format?' "\$FM_HOME/state/demo.status" 2>/dev/null \
+      || "\$FM_REPO/bin/fm-afk-contract.sh" archive >> "\$FM_HOME/engine-return.log" 2>&1 ;;
+esac
+exec "$real_mktemp" "\$@"
+SH
+  chmod +x "$home/fakebin/mktemp"
+  start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "away-then-attended: the host never started a watcher cycle"
+  append_status "$home" 'which export format?' needs-decision
+  wait_until 250 host_exited "$home" || fail "away-then-attended: the decision close did not reach main: $(cat "$home/state/.supervision-host.log")"
+  assert_absent "$home/state/.afk-contract" "fixture: the captain did not return before the turn"
+  expect_code 0 "$(cat "$home/host.rc")" "the close must exit 0"
+  assert_re '^signal: .*demo.status' "$home/host.out" "the close must carry the watcher's reason line"
+  assert_no_re '^supervision-host' "$home/host.out" "the close must reach main exactly as the arm printed it"
+  [ "$(engine_calls "$home")" -eq 0 ] || fail "away-then-attended: the engine ran for a decision close"
+  assert_grep 'demo.status' "$home/state/.wake-queue" "the decision wake must stay queued for main"
+  assert_re '	pass-through	attended	main-only	signal:' "$home/state/.supervision-host.log" "the ledger must record why the close went to main"
+  assert_no_re '	no-op	' "$home/state/.supervision-host.log" "the close must not be treated as handled"
+  watcher_live "$home" && fail "the pass-through left the successor watcher running"
+  pass "host: a decision close accepted away whose turn starts attended still reaches main unchanged"
+}
+
 # Grok and OpenCode have no mirror writer, because they cannot record a
 # session's first captain prompt, and omp has no proven writer, so none of them
 # has a verified dialog mirror: every attended
@@ -1392,6 +1428,7 @@ test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main
 test_attended_captain_outcome_reaches_main_through_branch_outcomes
 test_captain_leaving_mid_turn_keeps_its_captain_outcome_for_the_return
 test_attended_main_only_close_passes_straight_to_main
+test_close_accepted_away_that_turns_attended_passes_to_main
 test_primary_without_a_verified_mirror_runs_away_only
 test_attended_wake_carries_the_dialog_mirror
 test_dialog_bearing_files_are_owner_only

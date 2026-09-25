@@ -45,6 +45,9 @@
 #     so main-only classes (check triggers, decision-owned triggers, a scan
 #     that is unsafe or holds nothing for the branch) stay main's;
 #   - away (the record exists): every close goes to the engine.
+# A close accepted away whose turn starts attended (the captain returned in
+# between) meets the same attended rule then, and one it may not take reaches
+# main exactly as the arm printed it.
 # A close the engine takes is handled in one order: it starts and verifies the
 # successor watcher cycle and confirms the handling handoff (the order
 # docs/watcher-continuity.md owns), computes the rows the branch may claim in
@@ -224,6 +227,8 @@ ARM_OUT=
 ARM_TEXT=
 CLOSED_ARM_PID=
 HANDLE_WHY=
+HANDLE_RC=0
+ACCEPTED_POSTURE=
 ENGINE_SUBSHELL=
 SUCCESSOR_PID=
 SUCCESSOR_OUT=
@@ -498,16 +503,20 @@ emit() {  # [line...]
   [ -z "$text" ] || printf '%s\n' "$text"
 }
 
-# Hand the close to main: stop the successor cycle (the state main's own turn
-# end starts from without the host), print the close, why, and any further
-# "supervision-host:" lines, and exit.
+# Stop the successor cycle: the state main's own turn end starts from without
+# the host.
+retire_successor() {
+  [ -n "$SUCCESSOR_PID" ] || return 0
+  retire_arm "$SUCCESSOR_PID" "$SUCCESSOR_OUT"
+  SUCCESSOR_PID=
+  SUCCESSOR_OUT=
+  "$SCRIPT_DIR/fm-watch-arm.sh" --stop >/dev/null 2>&1 || true
+}
+
+# Hand the close to main: stop the successor cycle, print the close, why, and
+# any further "supervision-host:" lines, and exit.
 exit_to_main() {  # <why> [further lines]
-  if [ -n "$SUCCESSOR_PID" ]; then
-    retire_arm "$SUCCESSOR_PID" "$SUCCESSOR_OUT"
-    SUCCESSOR_PID=
-    SUCCESSOR_OUT=
-    "$SCRIPT_DIR/fm-watch-arm.sh" --stop >/dev/null 2>&1 || true
-  fi
+  retire_successor
   log_line "to-main	$1"
   emit "supervision-host: $1" "${2:-}"
   exit 0
@@ -695,12 +704,13 @@ health_record() {  # <engine-error 0|1> <reports>
 
 # Handle one close on the engine, in the posture the record gives when the
 # turn starts (TURN_POSTURE). Returns 0 when the wake is handled (or held
-# nothing the branch may claim), else sets HANDLE_WHY and returns 1; sets
-# ENGINE_ERROR when the turn failed on the engine itself. Runs in the host's
-# own shell, never a subshell, because it advances the host's grant and turn
-# state.
-handle_wake() {  # <reason-lines>
-  local reason=$1 first scope status corrupted rows tasks unscoped rc turn readback
+# nothing the branch may claim), 2 with ATTENDED_WHY set when a close accepted
+# away turns attended and the supervision session may not take it
+# (attended_acceptor), else sets HANDLE_WHY and returns 1; sets ENGINE_ERROR
+# when the turn failed on the engine itself. Runs in the host's own shell,
+# never a subshell, because it advances the host's grant and turn state.
+handle_wake() {  # <reason-lines> <accepted-posture>
+  local reason=$1 accepted=$2 first scope status corrupted rows tasks unscoped rc turn readback
   local receipts usage result errors unacked away_flag mirror
   LAST_TURN=
   ENGINE_ERROR=0
@@ -712,6 +722,9 @@ handle_wake() {  # <reason-lines>
     away_flag=--afk
   fi
   first=$(printf '%s\n' "$reason" | head -n 1)
+  if [ "$TURN_POSTURE" = attended ] && [ "$accepted" = away ] && ! attended_acceptor "$first"; then
+    return 2
+  fi
   set --
   case "$first" in heartbeat*) set -- --heartbeat ;; esac
   if ! scope=$(node "$SCRIPT_DIR/fm-branch-dispatch.mjs" scope "$@" ${away_flag:+"$away_flag"} 2>/dev/null); then
@@ -942,6 +955,7 @@ while :; do
   # Attended: the close reaches main exactly as the plain arm delivers it,
   # unless the supervision session may take it (attended_acceptor).
   if [ ! -f "$STATE/.afk-contract" ]; then
+    ACCEPTED_POSTURE=attended
     if ! attended_acceptor "$(printf '%s\n' "$REASON" | head -n 1)"; then
       log_line "pass-through	attended	$ATTENDED_WHY	$(printf '%s\n' "$REASON" | head -n 1)"
       emit
@@ -949,6 +963,7 @@ while :; do
     fi
     host_still_owner || stand_down "this session no longer owns supervision"
   else
+    ACCEPTED_POSTURE=away
     if ! host_still_owner; then
       stand_down "this session no longer owns supervision"
     fi
@@ -979,7 +994,15 @@ while :; do
 
   # The captain returned during that turn: the return brief was rendered
   # before its outcomes existed, so main relays them now, handled or not.
-  if ! handle_wake "$REASON"; then
+  handle_wake "$REASON" "$ACCEPTED_POSTURE"
+  HANDLE_RC=$?
+  if [ "$HANDLE_RC" -eq 2 ]; then
+    log_line "pass-through	attended	$ATTENDED_WHY	$(printf '%s\n' "$REASON" | head -n 1)"
+    retire_successor
+    emit
+    exit 0
+  fi
+  if [ "$HANDLE_RC" -ne 0 ]; then
     if returned_during_turn; then
       exit_to_main "the away session could not take this wake: $HANDLE_WHY; this wake is yours, and the captain returned during its turn, so relay the outcomes it recorded (store rows $RETURNED_SEQS, listed next and in bin/fm-branch-outcome.sh list) to the captain" \
         "$(turn_outcome_lines "$LAST_TURN")${HEALTH_NOTE:+$'\n'$HEALTH_NOTE}"
