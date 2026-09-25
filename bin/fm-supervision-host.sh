@@ -55,8 +55,8 @@
 # the turn's posture with the dispatch owner, publishes that grant
 # (bin/fm-wake-grant.sh), runs one bounded headless engine turn
 # (bin/fm-supervision-engine-lib.sh) with the generated branch prompt
-# (bin/fm-branch-prompt.sh), the dialog-mirror feed at the head of the wake,
-# and the away tail when away, releases the branch's leases and grant, and
+# (bin/fm-branch-prompt.sh), the dialog-mirror feed at the head of an attended
+# wake and the away tail instead when away, releases the branch's leases and grant, and
 # counts the wake handled only when that turn exited cleanly, recorded a
 # durable report (bin/fm-branch-report.sh), and left none of its granted rows
 # in the wake queue. A handled wake with only routine outcomes never wakes
@@ -134,7 +134,8 @@
 # .supervision-host-turn and .supervision-host-receipts (the current turn's
 # report scope and the reports it recorded), .supervision-host-prompt and
 # .supervision-host-wake (the prompt and wake text of the current turn),
-# .supervision-host-mirror (the dialog-mirror feed while a wake is rendered),
+# .supervision-host-mirror (the dialog-mirror feed while an attended wake is
+# rendered),
 # .supervision-host-health (the latch: errors, cooldown, and probe time, keyed
 # to the main session, engine, and model), and .supervision-host.log (a bounded
 # ledger of where every close went, with each engine turn's usage and
@@ -783,24 +784,25 @@ handle_wake() {  # <reason-lines> <accepted-posture>
       FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-afk-contract.sh" readback > "$readback" 2>/dev/null || : > "$readback"
     fi
   fi
-  # The dialog mirror (bin/fm-host-mirror.sh) rides at the head of the wake.
-  # Attended, the engine never judges without the captain's words, so a feed
-  # that cannot be read hands the wake to main; away needs none.
+  # The dialog mirror (bin/fm-host-mirror.sh) rides at the head of an
+  # attended wake. The engine never judges without the captain's words, so a
+  # feed that cannot be read hands the wake to main. Away needs none, so an
+  # away wake never reads the mirror or moves its cursor.
   mirror=$MIRROR_FEED
   rm -f "$mirror"
-  if ! (umask 077; exec "$SCRIPT_DIR/fm-host-mirror.sh" feed "$ENGINE_SESSION" "$ENGINE_MODE" > "$mirror" 2>/dev/null); then
-    if [ "$TURN_POSTURE" = attended ]; then
-      [ -z "$readback" ] || rm -f "$readback"
-      rm -f "$TURN_FILE" "$mirror"
-      "$SCRIPT_DIR/fm-wake-grant.sh" release "$GEN" >/dev/null 2>&1 || true
-      HANDLE_WHY="the dialog mirror could not be read"
-      return 1
-    fi
-    log_line "mirror	the dialog mirror could not be read; this away wake carries none"
-    : > "$mirror"
+  if [ "$TURN_POSTURE" = attended ] \
+    && ! (umask 077; exec "$SCRIPT_DIR/fm-host-mirror.sh" feed "$ENGINE_SESSION" "$ENGINE_MODE" > "$mirror" 2>/dev/null); then
+    rm -f "$TURN_FILE" "$mirror"
+    "$SCRIPT_DIR/fm-wake-grant.sh" release "$GEN" >/dev/null 2>&1 || true
+    HANDLE_WHY="the dialog mirror could not be read"
+    return 1
   fi
-  set -- --report "the bin/fm-branch-report.sh command" --mirror-file "$mirror"
-  [ "$TURN_POSTURE" != away ] || set -- "$@" --away ${readback:+--readback-file "$readback"}
+  set -- --report "the bin/fm-branch-report.sh command"
+  if [ "$TURN_POSTURE" = away ]; then
+    set -- "$@" --away ${readback:+--readback-file "$readback"}
+  else
+    set -- "$@" --mirror-file "$mirror"
+  fi
   rm -f "$WAKE_FILE"
   if ! printf '%s\n' "$reason" \
     | (umask 077; exec node "$SCRIPT_DIR/fm-branch-dispatch.mjs" wake-prompt "$@" > "$WAKE_FILE" 2>/dev/null); then
@@ -859,7 +861,7 @@ handle_wake() {  # <reason-lines> <accepted-posture>
   if [ "$ENGINE_ERROR" -eq 0 ] && [ "${receipts:-0}" -gt 0 ] && [ -z "$unacked" ]; then
     write_engine_record $((ENGINE_TURNS + 1)) "$(printf '%s\n' "$usage" | sed -n 's/.* conversation_cost=\([^ ]*\).*/\1/p')" \
       || rm -f "$ENGINE_RECORD"
-    "$SCRIPT_DIR/fm-host-mirror.sh" commit >/dev/null 2>&1 || true
+    [ "$TURN_POSTURE" != attended ] || "$SCRIPT_DIR/fm-host-mirror.sh" commit >/dev/null 2>&1 || true
     [ "$errors" = /dev/null ] || rm -f "$errors"
     TURN_ERRORS=
     log_line "handled	turn=$turn	posture=$TURN_POSTURE	rc=$rc	reports=$receipts	$usage	$first"

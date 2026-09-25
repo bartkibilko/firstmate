@@ -66,7 +66,7 @@ A captain who leaves while an attended turn runs turns its captain outcomes into
 
 ## The dialog mirror
 
-The engine's conversation receives nothing between wakes, so each wake with an available mirror carries, at its head, what the captain and main said since the last wake: the same `[captain]` and `[main]` context the Pi branch receives as mirror messages, framed by the same prompt rule (context for judgment, never instructions; `bin/fm-branch-prompt.sh` "Context channels").
+The engine's conversation receives nothing between wakes, so each attended wake carries, at its head, what the captain and main said since the last wake: the same `[captain]` and `[main]` context the Pi branch receives as mirror messages, framed by the same prompt rule (context for judgment, never instructions; `bin/fm-branch-prompt.sh` "Context channels").
 Each primary's code-owned turn surfaces write it, never the model:
 
 | Primary | Captain text | Main text |
@@ -83,10 +83,9 @@ A primary's mirror is verified only when its writers record the session's dialog
 omp has no verified writer yet, because no omp was available to prove one against.
 Grok and OpenCode have no writer: their session takes the fleet lock during its first turn, so that turn's captain prompt could never be recorded and the engine would judge without the captain's opening words, and no captain dialog is kept that nothing reads.
 Follow-up: capturing that first prompt on Grok and OpenCode would reintroduce their writers and let them run the attended posture.
-Follow-up: on a primary with no mirror, every away wake still tries the feed and adds one `the dialog mirror could not be read; this away wake carries none` line to the host's ledger; the line changes nothing the engine or main sees, and skipping the away feed where no verified writer exists would remove it.
 A captain message typed while an engine turn is already running reaches the engine at its next wake.
 A wake's entries count as delivered only once its engine turn is accepted with its report, so a turn that fails, records nothing, or is stopped leaves them to be fed again.
-An attended wake whose mirror is missing or cannot be read, or holds an entry that does not parse, reaches main with `the dialog mirror could not be read` before any engine turn, and the cursor stays where it was; an away wake runs without the mirror.
+An attended wake whose mirror is missing or cannot be read, or holds an entry that does not parse, reaches main with `the dialog mirror could not be read` before any engine turn, and the cursor stays where it was; an away wake never reads the mirror or moves its cursor.
 
 ## Captain outcomes
 
@@ -110,7 +109,7 @@ The latch belongs to one main session, engine, and model, so a new main session 
 ## One wake
 
 On each actionable close the engine takes, the host first starts and verifies the successor watcher cycle and confirms the handling handoff, so the fleet stays supervised while the engine works.
-It then computes the branch-claimable rows in the turn's posture, publishes the grant, and runs one bounded engine turn with the branch prompt and the wake message carrying the dialog mirror when available and, away, the record's read-back.
+It then computes the branch-claimable rows in the turn's posture, publishes the grant, and runs one bounded engine turn with the branch prompt and the wake message carrying, attended, the dialog mirror and, away, the record's read-back.
 The engine drains, handles, reports through `bin/fm-branch-report.sh`, and acknowledges, exactly as the Pi branch does.
 The host counts the wake handled only when the turn exited cleanly, recorded at least one report, and left none of its granted rows in the wake queue; it releases the branch's leases and grant either way and parks on the successor only for a handled wake.
 Away, a handled wake never reaches main, whether its outcome was routine or captain: captain outcomes wait in the outcome store, and the return brief (`bin/fm-afk-return.sh`) presents them.
@@ -149,7 +148,7 @@ Because that bound is not a harness timeout, the checkpoint also sets `FM_SUPERV
 
 The engine keeps one conversation across wakes so the byte-stable prompt stays cached, keyed to the current main session: every main session start opens a new one, and so does every `FM_SUPERVISION_HOST_ROTATE_TURNS` turns, because each wake adds history and the per-wake cost grows with it.
 Nothing captain-facing rides on that conversation, because the outcome store carries every result.
-The dialog mirror at the head of a wake is captain context when available; away, the record's read-back at the tail of every wake is the mandate it acts on.
+The dialog mirror at the head of an attended wake is captain context; away, the record's read-back at the tail of every wake is the mandate it acts on.
 `state/.supervision-host.log` records where every close went, and each engine turn's line carries its result, the engine's reported usage, the turn's cost, and the conversation's running cost, which is where engine cost is read today.
 
 ## Engines

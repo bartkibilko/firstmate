@@ -920,6 +920,8 @@ test_away_wake_is_handled_on_the_engine_and_never_reaches_main() {
   local home lock_pid session first second pid watcher
   home=$(make_home away-handled away)
   echo hold-lease > "$home/stub-mode"
+  # Dialog in the mirror that an away wake must neither carry nor mark read.
+  printf '{"hook_event_name":"UserPromptSubmit","prompt_id":"p1","prompt":"keep the export worker on low effort"}' > "$home/mirror-seed.1"
   start_host "$home"
   wait_until 150 watcher_live "$home" || fail "away: the host never started a watcher cycle: $(cat "$home/host.out")"
   append_status "$home" 'step one'
@@ -936,6 +938,10 @@ test_away_wake_is_handled_on_the_engine_and_never_reaches_main() {
   assert_re '^arg=sonnet$' "$first" "the engine must default to its default model"
   assert_re '^arg=--session-id$' "$first" "the first turn must open a new conversation"
   assert_re '^POSTURE: AWAY\.' "$first" "the wake must carry the away tail"
+  assert_grep 'keep the export worker on low effort' "$home/state/.host-mirror.jsonl" "fixture: the captain's dialog was not mirrored"
+  assert_no_re 'MAIN DIALOG MIRROR|low effort' "$first" "an away wake must carry no dialog mirror"
+  assert_absent "$home/state/.host-mirror-cursor" "a handled away wake must leave the mirror cursor where it was"
+  assert_absent "$home/state/.host-mirror-cursor.next" "an away wake must stage no mirror cursor"
   assert_grep '"task":"demo"' "$home/state/branch-outcomes.jsonl" "the engine's report did not reach the outcome store"
   assert_no_grep 'demo.status' "$home/state/.wake-queue" "the engine's acknowledgement did not consume the wake"
   if FM_HOME="$home" "$LEASE" check demo >/dev/null 2>&1; then

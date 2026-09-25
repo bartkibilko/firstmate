@@ -775,7 +775,6 @@ Not fixed here:
 - The first captain prompt of a Grok or OpenCode session could not be mirrored, because the session acquires the fleet lock during that first turn.
   Grok and OpenCode are therefore not verified for the attended mirror, and their writers (the Grok `UserPromptSubmit` and `Stop` registration and the OpenCode plugin's `chat.message` and `session.idle` path) were removed so no captain dialog is kept that nothing reads: the host keeps every attended close on main there, and their away posture is unchanged.
   Capturing that first prompt remains follow-up work and would reintroduce their writers.
-- On a primary with no mirror, every away wake adds one `mirror the dialog mirror could not be read; this away wake carries none` line to the host's ledger; it changes nothing the engine or main sees.
 
 Deterministic entry points:
 
