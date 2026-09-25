@@ -27,6 +27,7 @@ exits it.
 0. **First run `bin/fm-afk-launch.sh quiet-check`.**
    It exits 0 with one line when quiet mode needs nothing on this home: where the attended supervision host runs (`docs/supervision-host.md` "Postures"), the ordinary supervision session already handles the wakes it can while the captain is present and opens no turn here for a routine outcome, so the attended posture already is quiet mode.
    Then enter nothing - no record, no daemon, no flag - and tell the captain in `AGENTS.md` section 9 language that supervision here already works that way: routine fleet events stay off this conversation, while decisions, failures, credentials, and review-ready work still reach them.
+   When its line instead says the supervision session is paused after repeated engine errors, still enter nothing, and tell the captain plainly: routine wakes reach this conversation until the session recovers, and its next retry is due at the time the line names.
    `/quiet off` then needs nothing either.
    A quiet `enter`, `start`, or `start-native` refuses on such a home, so the steps below never run there.
    When it exits 1, continue with step 1.

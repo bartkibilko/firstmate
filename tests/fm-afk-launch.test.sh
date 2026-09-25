@@ -813,7 +813,7 @@ unit_native_lifecycle() {
 # quiet mode, so a fresh quiet entry launches nothing either, while a quiet
 # daemon that already runs keeps refreshing until /quiet off.
 unit_supervision_host_claude_home_runs_no_away_daemon() {
-  local st out rc
+  local st out rc key
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-host.XXXXXX")
   mkdir -p "$st/state" "$st/config"
   : > "$st/config/supervision-host"
@@ -837,6 +837,22 @@ unit_supervision_host_claude_home_runs_no_away_daemon() {
   if [ "$rc" -ne 0 ] || ! printf '%s' "$out" | grep -F 'Quiet mode needs nothing on this home' >/dev/null; then
     fail "supervision host: quiet-check must say quiet mode needs nothing on a claude host home (rc=$rc): $out"
   fi
+  # The host's broken-session latch, as the host persists it after two engine
+  # errors, keyed by the engine library's own latch key.
+  key=$(bash -c '. "$1/bin/fm-supervision-engine-lib.sh" && fm_supervision_host_config "$2/config" claude && fm_supervision_host_health_key "$2/state"' _ "$ROOT" "$st")
+  printf 'key=%s\nerrors=2\ncooldown=300\nretry_after=%s\n' "$key" "$(( $(date +%s) + 300 ))" > "$st/state/.supervision-host-health"
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" quiet-check 2>&1)
+  rc=$?
+  if [ "$rc" -ne 0 ] || printf '%s' "$out" | grep -F 'Quiet mode needs nothing' >/dev/null \
+    || ! printf '%s' "$out" | grep -F 'paused after repeated engine errors: routine wakes reach this conversation until it recovers, and its next retry is due at' >/dev/null \
+    || [ -e "$st/state/.afk" ] || [ -e "$st/state/.afk-daemon-terminal" ]; then
+    fail "supervision host: quiet-check during the latch's cooldown must say the session is paused, not quiet, and start nothing (rc=$rc): $out"
+  fi
+  printf 'key=%s\nerrors=0\ncooldown=0\nretry_after=0\n' "$key" > "$st/state/.supervision-host-health"
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" quiet-check 2>&1)
+  printf '%s' "$out" | grep -F 'Quiet mode needs nothing on this home' >/dev/null \
+    || fail "supervision host: quiet-check after the latch clears must say quiet mode needs nothing again: $out"
+  pass "supervision host: quiet-check says the supervision session is paused while its latch holds, and starts nothing"
   printf 'quiet\n%s\n' "$(date +%s)" > "$st/state/.afk"
   if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_MODE=quiet "$LAUNCH" start-native >/dev/null 2>&1 \
     && [ "$(head -n 1 "$st/state/.afk")" = quiet ] \

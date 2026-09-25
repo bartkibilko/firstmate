@@ -29,6 +29,6 @@ Supervision host: on for this home (`config/supervision-host`; [`supervision-hos
 5. Captain outcomes the away session records wait in the outcome store for the return brief (`bin/fm-afk-return.sh`); the drain's `BRANCH OUTCOMES` section presents them only after the return.
 {claude,grok} 6. `/afk` writes only the record here (`bin/fm-afk-launch.sh start-native` refuses the away daemon on this home).
 {cursor,opencode,omp,codex} 6. `/afk` writes only the record here (`bin/fm-afk-launch.sh start` refuses the away daemon on this home).
-{claude,cursor,codex}    `/quiet` needs nothing here: the attended supervision session already is quiet mode (the quiet skill's `quiet-check` says so), and a quiet daemon from an earlier entry keeps owning supervision until `/quiet off`.
+{claude,cursor,codex}    `/quiet` needs nothing here: the attended supervision session already is quiet mode (the quiet skill's `quiet-check` says so, or says it is paused after engine errors and routine wakes reach you until it recovers), and a quiet daemon from an earlier entry keeps owning supervision until `/quiet off`.
 {opencode,omp,grok}    `/quiet` still launches the daemon, which then owns supervision as above.
 {grok} 7. The pre-tool seatbelt does not classify the host command, so keep it exactly the one background call above: never shell `&`, a pipe, or another command bundled onto it.

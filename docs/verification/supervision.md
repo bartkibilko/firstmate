@@ -718,15 +718,17 @@ The payloads the writers read, captured from the real harnesses:
 
 Each non-Pi primary, with `config/supervision-host` naming `claude`, supervised the same session: two or three gated workers, a worker's keyed decision, the captain's standing words that one result mattered and another was routine, gates opened one at a time, `/quiet` (plain words on Codex, Cursor, Grok, and OpenCode, whose TUIs reject an unknown slash command), one more worker, an away window, the gate opening while away, and the return.
 
+The table records those sessions as they ran; the rows marked "today" no longer describe Grok and OpenCode, which have since lost their verified attended mirror ("Not fixed here" below), so today every attended close there reaches main and `/quiet` there launches the daemon.
+
 | Case | Observed |
 | --- | --- |
 | A decision close, or a stale close for a task with an open decision | reached main unchanged, with `pass-through attended main-only` in the ledger, on every primary |
-| A worker's routine progress or an idle finished worker | handled on the engine with no main turn; the next drain listed it once |
-| A finished result the captain asked about | the engine recorded a captain outcome, the host exited with `supervision-host: branch-outcome: ... (store rows <n>)`, main drained `BRANCH OUTCOMES`, told the captain, and ran `bin/fm-branch-outcome.sh mark-processed`, on every primary |
+| A worker's routine progress or an idle finished worker | handled on the engine with no main turn; the next drain listed it once (today on Claude, Cursor, and Codex only) |
+| A finished result the captain asked about | the engine recorded a captain outcome, the host exited with `supervision-host: branch-outcome: ... (store rows <n>)`, main drained `BRANCH OUTCOMES`, told the captain, and ran `bin/fm-branch-outcome.sh mark-processed`, on every primary in these sessions (today on Claude, Cursor, and Codex only) |
 | A finished result the captain called routine but only main could land | reached main as a captain outcome after the fix below; Cursor and Claude landed it without telling the captain, as asked |
 | Main busy when a new row arrived | main's drain claimed it first and the host handed that wake back with `main already claimed these wake rows` (OpenCode) |
-| The engine failing (Claude, a lab wrapper exiting 3) | the first failure handed its wake back; the second added `the supervision session is paused after repeated engine errors`; a close inside the 120-second cooldown passed through with no engine call; a failed probe doubled the cooldown to 240 seconds; a successful probe exited with `the supervision session recovered after a successful probe` |
-| `/quiet` | `bin/fm-afk-launch.sh quiet-check` printed its statement and no record or daemon was written, on every primary |
+| The engine failing (Claude, a lab wrapper exiting 3) | the first failure handed its wake back; the second added `the supervision session is paused after repeated engine errors`; a close inside the 120-second cooldown (a lab override since removed; the latch now always starts at 300 seconds) passed through with no engine call; a failed probe doubled the cooldown to 240 seconds; a successful probe exited with `the supervision session recovered after a successful probe` |
+| `/quiet` | `bin/fm-afk-launch.sh quiet-check` printed its statement and no record or daemon was written, on every primary in these sessions (today on Claude, Cursor, and Codex only; on Grok and OpenCode `quiet-check` now exits 1 and `/quiet` launches the daemon) |
 | Away | the away record and no daemon; the gated finish was a captain outcome `per your away instructions:` with main parked; after the return the brief listed it and the drain presented it until main acknowledged it |
 | Codex main restarted mid-session | its first close resurfaced to main as `check: rearm-resurface` and the mirror re-keyed to the new session |
 

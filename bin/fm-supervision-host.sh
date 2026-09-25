@@ -627,7 +627,7 @@ write_engine_record() {  # <turns> <conversation-cost>
 # session and one engine and model, so a new main session or another engine or
 # model starts clean.
 health_key() {
-  printf '%s|%s|%s\n' "$(fm_supervision_host_main_key "$STATE")" "$FM_SUPERVISION_ENGINE" "$FM_SUPERVISION_ENGINE_MODEL"
+  fm_supervision_host_health_key "$STATE"
 }
 
 # Sets HEALTH_ERRORS, HEALTH_COOLDOWN, and HEALTH_RETRY for the current key.
@@ -655,7 +655,7 @@ health_save() {
 # True while the latch holds main to every wake. Needs the engine config.
 health_cooling() {
   health_load
-  [ "$HEALTH_COOLDOWN" -gt 0 ] && [ "$(date +%s)" -lt "$HEALTH_RETRY" ]
+  fm_supervision_host_paused_until "$STATE" >/dev/null
 }
 
 # Fold one finished turn into the latch. Sets HEALTH_NOTE to the one line main
@@ -768,11 +768,19 @@ handle_wake() {  # <reason-lines>
       FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-afk-contract.sh" readback > "$readback" 2>/dev/null || : > "$readback"
     fi
   fi
-  # The dialog mirror (bin/fm-host-mirror.sh) rides at the head of the wake; a
-  # feed that cannot be read only costs this wake its dialog context.
+  # The dialog mirror (bin/fm-host-mirror.sh) rides at the head of the wake.
+  # Attended, the engine never judges without the captain's words, so a feed
+  # that cannot be read hands the wake to main; away needs none.
   mirror=$MIRROR_FEED
   if ! "$SCRIPT_DIR/fm-host-mirror.sh" feed "$ENGINE_SESSION" "$ENGINE_MODE" > "$mirror" 2>/dev/null; then
-    log_line "mirror	the dialog mirror could not be read; this wake carries none"
+    if [ "$TURN_POSTURE" = attended ]; then
+      [ -z "$readback" ] || rm -f "$readback"
+      rm -f "$TURN_FILE" "$mirror"
+      "$SCRIPT_DIR/fm-wake-grant.sh" release "$GEN" >/dev/null 2>&1 || true
+      HANDLE_WHY="the dialog mirror could not be read"
+      return 1
+    fi
+    log_line "mirror	the dialog mirror could not be read; this away wake carries none"
     : > "$mirror"
   fi
   set -- --report "the bin/fm-branch-report.sh command" --mirror-file "$mirror"
@@ -951,7 +959,7 @@ while :; do
       exit_to_main "node is required to compute branch eligibility; this wake is yours"
     fi
     if health_cooling; then
-      exit_to_main "the away session is paused after repeated engine errors until $(date -r "$HEALTH_RETRY" '+%H:%M' 2>/dev/null || date -d "@$HEALTH_RETRY" '+%H:%M' 2>/dev/null || printf 'its cooldown ends'); this wake is yours"
+      exit_to_main "the away session is paused after repeated engine errors until $(fm_supervision_host_clock "$HEALTH_RETRY"); this wake is yours"
     fi
   fi
 

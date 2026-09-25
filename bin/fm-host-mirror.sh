@@ -49,7 +49,9 @@
 # FEED. $STATE/.host-mirror-cursor holds "<seq>\t<engine session>": the newest
 # entry already fed to that engine conversation. `feed <session> new|resume`
 # prints what the next wake carries, one "[captain] ..." or "[main] ..." entry
-# after another, oldest first, and stages the cursor it would reach in
+# after another, oldest first, and fails, staging nothing, when the mirror
+# cannot be read or holds an entry that does not parse; otherwise it stages
+# the cursor it would reach in
 # $STATE/.host-mirror-cursor.next; `commit` advances the cursor to it once the
 # engine turn that carried the wake is accepted with its report, so a wake the
 # engine never completed leaves its entries unread for the next one. A resumed
@@ -78,8 +80,8 @@
 #   fm-host-mirror.sh commit
 #   fm-host-mirror.sh verified <harness>
 # hook, append, and commit always exit 0 and print nothing; feed exits 1 when
-# the mirror could not be read, and prints nothing when there is nothing to
-# feed.
+# the mirror could not be read or holds an invalid entry, and prints nothing
+# when there is nothing to feed.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -289,9 +291,14 @@ fi
 if [ "$MODE" = new ] || [ "$CURSOR_SESSION" != "$SESSION" ]; then
   CURSOR_SEQ=0
 fi
-if ! OUT=$(jq -Rrn --arg key "$KEY" --argjson after "$CURSOR_SEQ" --argjson cap "$FEED_CAP" '
-    [inputs | fromjson? | select(type == "object" and .key == $key and (.seq | type) == "number" and .seq > $after
-      and (.tag == "captain" or .tag == "main") and (.text | type) == "string")]
+# Every entry must parse and carry its fields: a feed that would skip one
+# cannot vouch for the dialog it carries, so it fails and stages nothing.
+ENTRIES='[inputs | fromjson]
+  | if all(type == "object" and (.seq | type) == "number" and (.key | type) == "string"
+      and (.tag == "captain" or .tag == "main") and (.text | type) == "string")
+    then . else error("invalid mirror entry") end'
+if ! OUT=$(jq -Rrn --arg key "$KEY" --argjson after "$CURSOR_SEQ" --argjson cap "$FEED_CAP" "$ENTRIES"'
+    | map(select(.key == $key and .seq > $after))
     | map("[\(.tag)] \(.text)")
     | reverse
     | reduce .[] as $entry ({kept: [], used: 0, left: 0};
@@ -304,7 +311,10 @@ if ! OUT=$(jq -Rrn --arg key "$KEY" --argjson after "$CURSOR_SEQ" --argjson cap 
   fm_lock_release "$LOCK"
   exit 1
 fi
-LAST=$(jq -Rn '[inputs | fromjson? | select(type == "object") | .seq | numbers] | max // 0' "$MIRROR" 2>/dev/null)
+if ! LAST=$(jq -Rn "$ENTRIES"' | map(.seq) | max // 0' "$MIRROR" 2>/dev/null); then
+  fm_lock_release "$LOCK"
+  exit 1
+fi
 case "$LAST" in ''|*[!0-9]*) LAST=0 ;; esac
 printf '%s\t%s\n' "$LAST" "$SESSION" > "$STAGED" 2>/dev/null || true
 fm_lock_release "$LOCK"

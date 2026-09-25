@@ -112,6 +112,33 @@ fm_supervision_host_main_key() {
     "$(sed -n '1p' "$1/.lock-session" 2>/dev/null | cksum | awk '{ print $1 }')"
 }
 
+# fm_supervision_host_health_key <state-dir>: the key the host's
+# broken-session latch (bin/fm-supervision-host.sh, state/.supervision-host-health)
+# is kept under: the current main session, engine, and model. Needs
+# fm_supervision_host_config first.
+fm_supervision_host_health_key() {
+  printf '%s|%s|%s\n' "$(fm_supervision_host_main_key "$1")" "$FM_SUPERVISION_ENGINE" "$FM_SUPERVISION_ENGINE_MODEL"
+}
+
+# fm_supervision_host_paused_until <state-dir>: while that latch hands every
+# wake to main, print the epoch at which the next wake probes the engine and
+# succeed; otherwise fail. Needs fm_supervision_host_config first.
+fm_supervision_host_paused_until() {
+  local file="$1/.supervision-host-health" cooldown retry
+  [ "$(sed -n 's/^key=//p' "$file" 2>/dev/null | head -n 1)" = "$(fm_supervision_host_health_key "$1")" ] || return 1
+  cooldown=$(sed -n 's/^cooldown=//p' "$file" 2>/dev/null | head -n 1)
+  retry=$(sed -n 's/^retry_after=//p' "$file" 2>/dev/null | head -n 1)
+  case "$cooldown" in ''|*[!0-9]*) return 1 ;; esac
+  case "$retry" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$cooldown" -gt 0 ] && [ "$(date +%s)" -lt "$retry" ] || return 1
+  printf '%s\n' "$retry"
+}
+
+# fm_supervision_host_clock <epoch>: the local time of day it names.
+fm_supervision_host_clock() {
+  date -r "$1" '+%H:%M' 2>/dev/null || date -d "@$1" '+%H:%M' 2>/dev/null || printf 'the end of its cooldown'
+}
+
 # fm_supervision_engine_bin <engine>: print the executable, or fail with a
 # plain reason on stderr.
 fm_supervision_engine_bin() {

@@ -27,6 +27,9 @@
 # (docs/supervision-host.md "Postures": the home opted in, names a usable
 # engine, and the primary has a verified dialog mirror), because that host
 # already keeps the wakes it handles off main while the captain is present.
+# While its broken-session latch holds, `quiet-check` says instead that the
+# session is paused, that routine wakes reach main until it recovers, and when
+# it retries; nothing else changes, and no daemon starts.
 # `quiet-check` answers that before a quiet entry writes anything, and a quiet
 # `enter`, `start`, or `start-native` refuses there too, so a quiet entry can
 # never leave an away record that would park a present captain's main. A quiet
@@ -233,6 +236,12 @@ fm_afk_launch_quiet_needs_nothing() {
 }
 
 fm_afk_launch_quiet_statement() {
+  local retry
+  if retry=$(fm_supervision_host_paused_until "$FM_AFK_LAUNCH_STATE"); then
+    printf 'Quiet mode starts nothing on this home, but its supervision session is paused after repeated engine errors: routine wakes reach this conversation until it recovers, and its next retry is due at %s.\n' \
+      "$(fm_supervision_host_clock "$retry")"
+    return 0
+  fi
   printf 'Quiet mode needs nothing on this home: the ordinary supervision session already handles the wakes it can while the captain is present, never opens a turn here for a routine outcome, and hands this conversation only what needs it; no daemon and no away record are used.\n'
 }
 
@@ -258,7 +267,7 @@ fm_afk_launch_daemon_allowed() {
   fi
   if [ "$mode" = quiet ]; then
     fm_afk_launch_quiet_needs_nothing || return 0
-    fm_afk_launch_log "quiet mode launches no daemon on this $harness home, whose attended supervision host already keeps routine wakes off this conversation (config/supervision-host)"
+    fm_afk_launch_log "quiet mode launches no daemon on this $harness home, whose attended supervision host owns quiet supervision (config/supervision-host); bin/fm-afk-launch.sh quiet-check says what reaches this conversation"
     return 1
   fi
   fm_afk_launch_log "the away daemon is not launched on this $harness home, which runs the supervision host (config/supervision-host); the away-posture record is the posture here (run bin/fm-afk-launch.sh enter and stop)"
