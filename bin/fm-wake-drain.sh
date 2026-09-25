@@ -559,9 +559,12 @@ EOF
 # main's transcript without a turn; silent fleet reviews never appear. Every
 # unprocessed captain outcome is listed with the exact
 # bin/fm-branch-outcome.sh mark-processed acknowledgement, on every drain until
-# main acknowledges it. The presentation advances the store's read cursor
-# through the rows it read, which is what lets mark-processed accept main's
-# acknowledgement and keeps a routine row from repeating. An unprocessed
+# main acknowledges it. Both lists run oldest first, and a row the byte cap
+# leaves out follows on the next drain: the presentation advances the store's
+# read cursor only through the rows before the first routine row it left out,
+# and lists only the captain rows that cursor covers. That cursor is what lets
+# mark-processed accept main's acknowledgement and keeps a routine row from
+# repeating. An unprocessed
 # captain row is always presented, never adopted as processed, so a home that
 # opts in mid-session cannot lose its first captain outcome; the cost is that
 # rows recorded before this section existed are presented once more. It runs
@@ -571,7 +574,7 @@ EOF
 # Bounded like OPEN DECISIONS, silent when nothing is new or unprocessed, and
 # never fails the drain.
 print_branch_outcomes_section() {
-  local config rows routine captain line seq max=0
+  local config rows routine captain line seq max=0 through
   local output='' used=0 shown=0 omitted=0 bytes item_bytes=600 global_bytes=4000
   [ "$ACTOR" = main ] || return 0
   config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
@@ -586,30 +589,38 @@ print_branch_outcomes_section() {
   fi
   [ -n "$rows" ] || return 0
   routine=$(printf '%s\n' "$rows" | jq -r 'select(.unread and .verdict == "routine" and .silent != true)
-    | "[seq \(.seq)] \(.task): \(.summary | gsub("[\t\n\r]"; " "))"' 2>/dev/null)
-  captain=$(printf '%s\n' "$rows" | jq -r 'select(.verdict == "captain")
     | "\(.seq)\t[seq \(.seq)] \(.task): \(.summary | gsub("[\t\n\r]"; " "))"' 2>/dev/null)
-  if [ -n "$routine" ]; then
-    # Newest first under the cap, printed oldest first.
-    while IFS= read -r line; do
-      [ -n "$line" ] || continue
-      fm_cap_line_var "$line" $((item_bytes - 1))
-      line=$FM_LINE_CAP_LINE
-      bytes=$(( ${#line} + 1 ))
-      if [ "$omitted" -gt 0 ] || [ $((used + bytes)) -gt 2000 ]; then
-        omitted=$((omitted + 1))
-        continue
-      fi
-      output="$line
-$output"
-      used=$((used + bytes))
-    done <<ROWS
-$(printf '%s\n' "$routine" | awk '{ line[NR] = $0 } END { for (i = NR; i >= 1; i--) print line[i] }')
+  through=$(printf '%s\n' "$rows" | jq -s 'map(.seq) | max // 0' 2>/dev/null)
+  case "$through" in ''|*[!0-9]*) through=0 ;; esac
+  while IFS=$(printf '\t') read -r seq line; do
+    case "$seq" in ''|*[!0-9]*) continue ;; esac
+    fm_cap_line_var "$line" $((item_bytes - 1))
+    line=$FM_LINE_CAP_LINE
+    bytes=$(( ${#line} + 1 ))
+    if [ "$omitted" -eq 0 ] && [ $((used + bytes)) -gt 2000 ]; then
+      through=$((seq - 1))
+    fi
+    if [ "$through" -lt "$seq" ]; then
+      omitted=$((omitted + 1))
+      continue
+    fi
+    output="$output$line
+"
+    used=$((used + bytes))
+  done <<ROWS
+$routine
 ROWS
+  if ! "$SCRIPT_DIR/fm-branch-outcome.sh" mark-read --through "$through" >/dev/null 2>&1; then
+    printf 'BRANCH OUTCOMES SKIPPED: the outcome store could not be read safely; repair it before relying on this section.\n'
+    return 0
+  fi
+  captain=$(printf '%s\n' "$rows" | jq -r --argjson through "$through" 'select(.verdict == "captain" and .seq <= $through)
+    | "\(.seq)\t[seq \(.seq)] \(.task): \(.summary | gsub("[\t\n\r]"; " "))"' 2>/dev/null)
+  if [ -n "$output" ]; then
     printf 'BRANCH OUTCOMES, ROUTINE (handled by the supervision session since your last drain; for your awareness, nothing to acknowledge):\n'
-    [ "$omitted" -eq 0 ] || printf 'BRANCH OUTCOMES, ROUTINE: %d older omitted (byte cap; bin/fm-branch-outcome.sh list has them)\n' "$omitted"
     printf '%s' "$output"
   fi
+  [ "$omitted" -eq 0 ] || printf 'BRANCH OUTCOMES: the outcomes after seq %s are omitted (byte cap); they follow on the next drain\n' "$through"
   [ -n "$captain" ] || return 0
   output=''
   used=0

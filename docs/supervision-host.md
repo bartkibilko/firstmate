@@ -84,7 +84,7 @@ A captain message typed while an engine turn is already running reaches the engi
 ## Captain outcomes
 
 A captain-verdict outcome the attended engine records wakes main once, through the owner's ordinary wake path, with one `supervision-host: branch-outcome:` line naming its store rows.
-Main drains, and `bin/fm-wake-drain.sh` presents every unprocessed captain outcome in its `BRANCH OUTCOMES` section, oldest first and bounded, with the exact `bin/fm-branch-outcome.sh mark-processed --through <seq>` acknowledgement; that presentation is what the Pi branch's visible entry is, so it advances the store's read cursor through the rows it presents.
+Main drains, and `bin/fm-wake-drain.sh` presents every unprocessed captain outcome in its `BRANCH OUTCOMES` section, oldest first and bounded, with the exact `bin/fm-branch-outcome.sh mark-processed --through <seq>` acknowledgement; that presentation is what the Pi branch's visible entry is, so it advances the store's read cursor through the rows it presents, and a row its byte cap leaves out stays unread and follows on the next drain.
 Every later drain, including the session-start digest, presents them again until main acknowledges them, so an ignored outcome costs no extra turns and is never lost.
 The section runs only for main on an opted-in home whose primary is not Pi, and never while the away record exists; after the return it presents the away window's captain outcomes, which the return brief also listed, as the Pi branch does after a return.
 An unprocessed captain outcome is never adopted as processed, so a home that opts in mid-session cannot lose its first one; outcomes recorded before this section existed are presented once more, the safe direction.

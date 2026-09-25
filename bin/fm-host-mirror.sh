@@ -49,7 +49,10 @@
 # FEED. $STATE/.host-mirror-cursor holds "<seq>\t<engine session>": the newest
 # entry already fed to that engine conversation. `feed <session> new|resume`
 # prints what the next wake carries, one "[captain] ..." or "[main] ..." entry
-# after another, oldest first, and advances the cursor. A resumed conversation
+# after another, oldest first, and stages the cursor it would reach in
+# $STATE/.host-mirror-cursor.next; `commit` advances the cursor to it once the
+# wake is handed to the engine, so a wake that never reaches the engine leaves
+# its entries unread for the next one. A resumed conversation
 # gets the current main session's entries after the cursor; a new one (every
 # main session start, rotation, or failed turn) gets the current main
 # session's newest entries, so a fresh conversation re-anchors on this
@@ -68,9 +71,11 @@
 #   fm-host-mirror.sh append captain|main [--id <id>]
 #                                           one entry's text on stdin (plugin writers)
 #   fm-host-mirror.sh feed <session> new|resume
+#   fm-host-mirror.sh commit
 #   fm-host-mirror.sh verified <harness>
-# hook and append always exit 0 and print nothing; feed exits 1 when the
-# mirror could not be read, and prints nothing when there is nothing to feed.
+# hook, append, and commit always exit 0 and print nothing; feed exits 1 when
+# the mirror could not be read, and prints nothing when there is nothing to
+# feed.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -100,7 +105,7 @@ case "${1:-}" in
     # without the file, and a crewmate worktree with no config/, stay inert.
     [ -f "$CONFIG/supervision-host" ] || exit 0
     ;;
-  feed) ;;
+  feed|commit) ;;
   -h|--help) sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) usage ;;
 esac
@@ -115,6 +120,7 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 MIRROR="$STATE/.host-mirror.jsonl"
 CURSOR="$STATE/.host-mirror-cursor"
+STAGED="$CURSOR.next"
 LOCK="$STATE/.host-mirror.lock"
 
 # A writer records only the lock-owning primary session's dialog.
@@ -250,6 +256,14 @@ case "$1" in
     append_entry "$TAG" "$TEXT" "$ID"
     exit 0
     ;;
+  commit)
+    [ "$#" -eq 1 ] || usage
+    [ -f "$STAGED" ] || exit 0
+    fm_lock_acquire_wait "$LOCK" || exit 0
+    mv -f "$STAGED" "$CURSOR" 2>/dev/null || true
+    fm_lock_release "$LOCK"
+    exit 0
+    ;;
 esac
 
 # feed <session> new|resume
@@ -257,6 +271,7 @@ esac
 SESSION=$2
 MODE=$3
 case "$MODE" in new|resume) ;; *) usage ;; esac
+rm -f "$STAGED"
 [ -f "$MIRROR" ] || exit 0
 KEY=$(fm_supervision_host_main_key "$STATE")
 fm_lock_acquire_wait "$LOCK" || exit 1
@@ -287,7 +302,7 @@ if ! OUT=$(jq -Rrn --arg key "$KEY" --argjson after "$CURSOR_SEQ" --argjson cap 
 fi
 LAST=$(jq -Rn '[inputs | fromjson? | select(type == "object") | .seq | numbers] | max // 0' "$MIRROR" 2>/dev/null)
 case "$LAST" in ''|*[!0-9]*) LAST=0 ;; esac
-printf '%s\t%s\n' "$LAST" "$SESSION" > "$CURSOR" 2>/dev/null || true
+printf '%s\t%s\n' "$LAST" "$SESSION" > "$STAGED" 2>/dev/null || true
 fm_lock_release "$LOCK"
 [ -z "$OUT" ] || printf '%s\n' "$OUT"
 exit 0

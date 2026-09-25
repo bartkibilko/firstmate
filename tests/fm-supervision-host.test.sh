@@ -331,16 +331,22 @@ main_drain_and_ack() {  # <home>
 
 # One main session across several parks, as a primary's arm owner runs the host
 # again at each turn end: the session lock stays this one fake harness, so the
-# host's per-session state (the latch) carries across its parks.
+# host's per-session state (the latch, the engine conversation) carries
+# across its parks; the mirror seeds are written before each park, as in
+# start_host.
 start_session() {  # <home>
   local home=$1
   FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
-    "$FAKE_CLAUDE" -c '
+    MIRROR_ROOT="$MIRROR_ROOT" "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
       printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
       while [ ! -e "$FM_HOME/session.stop" ]; do
         if [ -e "$FM_HOME/park.go" ]; then
           rm -f "$FM_HOME/park.go"
+          for seed in "$FM_HOME"/mirror-seed.*; do
+            [ -f "$seed" ] || continue
+            FM_ROOT_OVERRIDE="$MIRROR_ROOT" "$MIRROR_ROOT/bin/fm-host-mirror.sh" hook claude < "$seed"
+          done
           "$0" park > "$FM_HOME/host.out" 2>&1
           printf "%s\n" "$?" > "$FM_HOME/host.rc"
         fi
@@ -349,12 +355,15 @@ start_session() {  # <home>
     ' "$HOST" 2>> "$home/claude.err" &
 }
 
-# Wait until the latch's cooldown has passed, so the next close probes.
-wait_for_probe() {  # <home>
-  local after
-  after=$(sed -n 's/^retry_after=//p' "$1/state/.supervision-host-health")
-  [ -n "$after" ] || fail "the latch recorded no probe time"
-  while [ "$(date +%s)" -le "$after" ]; do sleep 0.2; done
+# Let the latch's cooldown pass, as the clock would, by moving its persisted
+# probe time into the past, optionally with a cooldown already grown to
+# <seconds>; the next close then probes the engine.
+end_cooldown() {  # <home> [seconds]
+  local health="$1/state/.supervision-host-health" tmp
+  grep -q '^retry_after=[1-9]' "$health" 2>/dev/null || fail "the latch recorded no probe time"
+  tmp=$(mktemp "$health.XXXXXX")
+  sed -e 's/^retry_after=.*/retry_after=1/' ${2:+-e "s/^cooldown=.*/cooldown=$2/"} "$health" > "$tmp" \
+    && mv -f "$tmp" "$health" || fail "fixture: could not move the latch's probe time"
 }
 
 park_again() {  # <home>
@@ -387,6 +396,43 @@ test_branch_outcomes_only_on_an_opted_in_home_off_pi() {
   drained=$(FM_HOME="$home" "$FAKE_CLAUDE" -c '"$0" 2>&1' "$ROOT/bin/fm-wake-drain.sh")
   assert_contains "$drained" "[seq 1] demo: PR ready for review" "an opted-in home off Pi must present the captain outcome"
   pass "drain: BRANCH OUTCOMES runs only on an opted-in home whose primary is not Pi"
+}
+
+# Routine rows the section's byte cap leaves out stay unread, so the next drain
+# presents them, and a captain row behind them follows with its acknowledgement.
+test_branch_outcomes_left_out_by_the_cap_follow_on_the_next_drain() {
+  local home drained pad n
+  home="$TMP_ROOT/drain-cap"
+  mkdir -p "$home/state" "$home/config"
+  : > "$home/config/supervision-host"
+  pad=$(awk 'BEGIN { for (i = 0; i < 500; i++) printf "x" }')
+  for n in 1 2 3 4 5; do
+    FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" append --task demo --verdict routine --summary "routine $n $pad" >/dev/null \
+      || fail "fixture: could not record routine outcome $n"
+  done
+  FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" append --task demo --verdict captain --summary 'PR ready for review' >/dev/null \
+    || fail "fixture: could not record the captain outcome"
+
+  drained=$(FM_HOME="$home" "$FAKE_CLAUDE" -c '"$0" 2>&1' "$ROOT/bin/fm-wake-drain.sh")
+  assert_contains "$drained" "[seq 1] demo: routine 1" "the first drain must present the oldest routine outcome"
+  assert_contains "$drained" "[seq 3] demo: routine 3" "the first drain must present routine outcomes up to its cap"
+  assert_not_contains "$drained" "routine 4" "the fixture must exceed the section's cap"
+  assert_contains "$drained" "BRANCH OUTCOMES: the outcomes after seq 3 are omitted (byte cap); they follow on the next drain" \
+    "the drain must say what its cap left for the next drain"
+  assert_not_contains "$drained" "PR ready for review" "a captain outcome the cursor does not cover must wait for the next drain"
+
+  drained=$(FM_HOME="$home" "$FAKE_CLAUDE" -c '"$0" 2>&1' "$ROOT/bin/fm-wake-drain.sh")
+  assert_not_contains "$drained" "routine 3" "a presented routine outcome must not repeat"
+  assert_contains "$drained" "[seq 4] demo: routine 4" "a routine outcome the cap left out must follow on the next drain"
+  assert_contains "$drained" "[seq 5] demo: routine 5" "every routine outcome the cap left out must follow on the next drain"
+  assert_contains "$drained" "[seq 6] demo: PR ready for review" "the captain outcome must follow once the cursor covers it"
+  assert_contains "$drained" "bin/fm-branch-outcome.sh mark-processed --through 6" "the captain outcome must carry its acknowledgement"
+  FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" mark-processed --through 6 >/dev/null 2>&1 \
+    || fail "main's acknowledgement of the presented captain outcome was refused"
+
+  drained=$(FM_HOME="$home" "$FAKE_CLAUDE" -c '"$0" 2>&1' "$ROOT/bin/fm-wake-drain.sh")
+  assert_not_contains "$drained" "BRANCH OUTCOMES" "a fully presented and acknowledged store must present nothing"
+  pass "drain: branch outcomes the byte cap leaves out stay unread and follow on the next drain"
 }
 
 test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main() {
@@ -523,11 +569,64 @@ test_attended_wake_carries_the_dialog_mirror() {
   pass "host: each wake carries the captain's dialog since the last wake, without operational input"
 }
 
+# Park again after a host was stopped mid-park: the new cycle's first close is
+# the watcher's downtime resurface, which main drains before the next park.
+park_after_stop() {  # <home>
+  park_again "$1"
+  wait_until 150 host_exited "$1" || fail "the watcher's downtime resurface did not reach main: $(cat "$1/host.out")"
+  assert_re '^check: rearm-resurface' "$1/host.out" "fixture: the first close after the watcher stopped was not its resurface"
+  main_drain_and_ack "$1"
+  park_again "$1"
+}
+
+# A host that reaches its park boundary after feeding the dialog mirror, but
+# before the engine turn runs, has handed the engine nothing: the next host
+# resumes the same engine conversation and must still carry that dialog.
+test_boundary_before_the_turn_leaves_the_dialog_for_the_next_host() {
+  local home real_node second
+  home=$(make_home mirror-boundary attended)
+  real_node=$(command -v node)
+  cat > "$home/fakebin/node" <<SH
+#!/usr/bin/env bash
+if [ "\${2:-}" = wake-prompt ] && [ -e "\$FM_HOME/slow-render" ]; then sleep 25; fi
+exec "$real_node" "\$@"
+SH
+  chmod +x "$home/fakebin/node"
+  printf '{"hook_event_name":"UserPromptSubmit","prompt_id":"p1","prompt":"first ask"}' > "$home/mirror-seed.1"
+  FM_SUPERVISION_HOST_PARK_SECONDS=40 FM_SUPERVISION_HOST_TURN_TIMEOUT=20 FM_SUPERVISION_ENGINE_GRACE=1 start_session "$home"
+  park_again "$home"
+  append_status "$home" 'first'
+  wait_until 250 handled_at_least "$home" 1 || fail "mirror boundary: the first wake was not handled: $(cat "$home/state/.supervision-host.log")"
+  assert_re '^\[captain\] first ask$' "$home/engine-call.1" "fixture: the first turn did not carry the first dialog"
+  kill -TERM "$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")"
+  wait_until 200 host_exited "$home" || fail "mirror boundary: the first host did not stop on TERM"
+
+  printf '{"hook_event_name":"UserPromptSubmit","prompt_id":"p2","prompt":"second ask, never handed over"}' > "$home/mirror-seed.2"
+  : > "$home/slow-render"
+  park_after_stop "$home"
+  append_status "$home" 'reaches the boundary'
+  wait_until 400 host_exited "$home" || fail "mirror boundary: the host did not end its park"
+  assert_re '^supervision-host: cycle boundary - ' "$home/host.out" "fixture: the second host did not exit at its boundary"
+  [ "$(engine_calls "$home")" -eq 1 ] || fail "fixture: an engine turn ran at the boundary"
+  main_drain_and_ack "$home"
+
+  rm -f "$home/slow-render"
+  park_again "$home"
+  append_status "$home" 'handled after the boundary'
+  wait_until 250 handled_at_least "$home" 2 || fail "mirror boundary: the next wake was not handled: $(cat "$home/state/.supervision-host.log")"
+  second="$home/engine-call.2"
+  assert_re '^arg=--resume$' "$second" "fixture: the next turn did not resume the conversation"
+  assert_re '^\[captain\] second ask, never handed over$' "$second" \
+    "dialog fed to a wake that never reached the engine must reach the next turn"
+  assert_no_re '^\[captain\] first ask$' "$second" "a resumed conversation must not be fed dialog it already has"
+  pass "host: a park boundary before the engine turn leaves its dialog for the next host's turn"
+}
+
 test_latch_trips_after_two_engine_errors_then_probes_and_recovers() {
   local home
   home=$(make_home attended-latch attended)
   echo fail > "$home/stub-mode"
-  FM_SUPERVISION_HOST_COOLDOWN=12 FM_SUPERVISION_HOST_COOLDOWN_MAX=18 start_session "$home"
+  start_session "$home"
   park_again "$home"
   append_status "$home" 'first'
   wait_until 250 host_exited "$home" || fail "latch: the first engine error did not hand the wake back"
@@ -539,8 +638,9 @@ test_latch_trips_after_two_engine_errors_then_probes_and_recovers() {
   park_again "$home"
   append_status "$home" 'second'
   wait_until 250 host_exited "$home" || fail "latch: the second engine error did not hand the wake back"
-  assert_re '^supervision-host: the supervision session is paused after repeated engine errors' "$home/host.out" \
+  assert_re '^supervision-host: the supervision session is paused after repeated engine errors; every wake reaches you for the next 5 minutes' "$home/host.out" \
     "the second consecutive engine error must trip the latch with one line"
+  assert_grep 'cooldown=300' "$home/state/.supervision-host-health" "the latch must start with the Pi policy's five-minute cooldown"
   main_drain_and_ack "$home"
 
   park_again "$home"
@@ -553,16 +653,24 @@ test_latch_trips_after_two_engine_errors_then_probes_and_recovers() {
     "the ledger must record the cooldown"
   main_drain_and_ack "$home"
 
-  wait_for_probe "$home"
+  end_cooldown "$home"
   park_again "$home"
   append_status "$home" 'the probe fails'
   wait_until 250 host_exited "$home" || fail "latch: the failed probe did not hand the wake back"
   [ "$(engine_calls "$home")" -eq 3 ] || fail "the cooldown's end did not let one wake probe the engine"
   assert_no_re 'paused' "$home/host.out" "a failed probe must not repeat the trip line"
-  assert_grep 'cooldown=18' "$home/state/.supervision-host-health" "a failed probe must double the cooldown, up to its cap"
+  assert_grep 'cooldown=600' "$home/state/.supervision-host-health" "a failed probe must double the cooldown"
   main_drain_and_ack "$home"
 
-  wait_for_probe "$home"
+  end_cooldown "$home" 2400
+  park_again "$home"
+  append_status "$home" 'a later probe fails'
+  wait_until 250 host_exited "$home" || fail "latch: the later failed probe did not hand the wake back"
+  [ "$(engine_calls "$home")" -eq 4 ] || fail "the grown cooldown's end did not let one wake probe the engine"
+  assert_grep 'cooldown=3600' "$home/state/.supervision-host-health" "the doubled cooldown must stop at one hour"
+  main_drain_and_ack "$home"
+
+  end_cooldown "$home"
   echo handle > "$home/stub-mode"
   park_again "$home"
   append_status "$home" 'the probe succeeds'
@@ -579,7 +687,7 @@ test_latch_hands_away_wakes_back_with_a_line() {
   local home
   home=$(make_home away-latch away)
   echo fail > "$home/stub-mode"
-  FM_SUPERVISION_HOST_COOLDOWN=100 start_session "$home"
+  start_session "$home"
   park_again "$home"
   append_status "$home" 'first'
   wait_until 250 host_exited "$home" || fail "away latch: the first engine error did not hand the wake back"
@@ -1108,12 +1216,14 @@ test_report_surface_enforces_actor_turn_and_scope
 test_report_after_the_return_is_queued_for_main
 test_dispatch_entry_scopes_rows_and_renders_the_away_tail
 test_branch_outcomes_only_on_an_opted_in_home_off_pi
+test_branch_outcomes_left_out_by_the_cap_follow_on_the_next_drain
 test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main
 test_attended_captain_outcome_reaches_main_through_branch_outcomes
 test_captain_leaving_mid_turn_keeps_its_captain_outcome_for_the_return
 test_attended_main_only_close_passes_straight_to_main
 test_attended_primary_without_a_verified_mirror_passes_through
 test_attended_wake_carries_the_dialog_mirror
+test_boundary_before_the_turn_leaves_the_dialog_for_the_next_host
 test_latch_trips_after_two_engine_errors_then_probes_and_recovers
 test_latch_hands_away_wakes_back_with_a_line
 test_away_wake_is_handled_on_the_engine_and_never_reaches_main

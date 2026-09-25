@@ -143,9 +143,7 @@
 # the boundary), FM_SUPERVISION_HOST_TURN_TIMEOUT (1200), FM_SUPERVISION_HOST_ROTATE_TURNS (20:
 # a new engine conversation after this many turns; every main session start
 # also opens a new one), FM_SUPERVISION_HOST_READY_TIMEOUT (25: how long a
-# successor cycle may take to verify), FM_SUPERVISION_HOST_POLL (1),
-# FM_SUPERVISION_HOST_COOLDOWN (300: the first latch cooldown in seconds), and
-# FM_SUPERVISION_HOST_COOLDOWN_MAX (3600: the cap the doubling stops at).
+# successor cycle may take to verify), and FM_SUPERVISION_HOST_POLL (1).
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -190,9 +188,8 @@ TURN_TIMEOUT=$(numeric_or "${FM_SUPERVISION_HOST_TURN_TIMEOUT:-}" 1200)
 ROTATE_TURNS=$(numeric_or "${FM_SUPERVISION_HOST_ROTATE_TURNS:-}" 20)
 READY_TIMEOUT=$(numeric_or "${FM_SUPERVISION_HOST_READY_TIMEOUT:-}" 25)
 POLL=$(numeric_or "${FM_SUPERVISION_HOST_POLL:-}" 1)
-COOLDOWN=$(numeric_or "${FM_SUPERVISION_HOST_COOLDOWN:-}" 300)
-COOLDOWN_MAX=$(numeric_or "${FM_SUPERVISION_HOST_COOLDOWN_MAX:-}" 3600)
-[ "$COOLDOWN_MAX" -ge "$COOLDOWN" ] || COOLDOWN_MAX=$COOLDOWN
+COOLDOWN=300
+COOLDOWN_MAX=3600
 AUTOARM_GEN=${FM_SUPERVISION_HOST_AUTOARM_GEN:-}
 AUTOARM_OWNER=${FM_SUPERVISION_HOST_OWNER_PID:-}
 PRIMARY=${FM_SUPERVISION_HOST_PRIMARY:-}
@@ -673,7 +670,7 @@ health_record() {  # <engine-error 0|1> <reports>
     if [ "$HEALTH_ERRORS" -ge 2 ] || [ "$HEALTH_COOLDOWN" -gt 0 ]; then
       if [ "$HEALTH_COOLDOWN" -eq 0 ]; then
         HEALTH_COOLDOWN=$COOLDOWN
-        HEALTH_NOTE="supervision-host: the supervision session is paused after repeated engine errors; every wake reaches you for the next $((COOLDOWN / 60 > 0 ? COOLDOWN / 60 : 1)) minute(s), then one wake probes it again"
+        HEALTH_NOTE="supervision-host: the supervision session is paused after repeated engine errors; every wake reaches you for the next $((COOLDOWN / 60)) minutes, then one wake probes it again"
       else
         HEALTH_COOLDOWN=$((HEALTH_COOLDOWN * 2))
         [ "$HEALTH_COOLDOWN" -le "$COOLDOWN_MAX" ] || HEALTH_COOLDOWN=$COOLDOWN_MAX
@@ -795,6 +792,7 @@ handle_wake() {  # <reason-lines>
     "$SCRIPT_DIR/fm-wake-grant.sh" release "$GEN" >/dev/null 2>&1 || true
     boundary_exit
   fi
+  "$SCRIPT_DIR/fm-host-mirror.sh" commit >/dev/null 2>&1 || true
   result=$(mktemp "$STATE/.supervision-host-result.XXXXXX") || result=/dev/null
   errors=$(mktemp "$STATE/.supervision-host-errors.XXXXXX") || errors=/dev/null
   TURN_RESULT=$result

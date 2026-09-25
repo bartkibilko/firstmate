@@ -76,11 +76,10 @@
 #     A supervision-host drain's presentation off Pi (bin/fm-wake-drain.sh
 #     "BRANCH OUTCOMES", docs/supervision-host.md "Captain outcomes"): under
 #     the lock, print every unread record and every unprocessed captain record
-#     (raw JSONL, ascending seq, each with an added "unread" boolean), then
-#     advance the cursor to the store's tail, because off Pi that drain
-#     presentation is what the visible entry is. One call, so the drain pays
-#     one validated read. Prints nothing when nothing is unread or
-#     unprocessed.
+#     (raw JSONL, ascending seq, each with an added "unread" boolean). It
+#     moves nothing: off Pi that drain presentation is what the visible entry
+#     is, so the drain runs mark-read through the rows it actually presented.
+#     Prints nothing when nothing is unread or unprocessed.
 #   fm-branch-outcome.sh processed-init [--held-lock]
 #     Rebuild the bounded per-task outcome indexes, then create the processed
 #     marker at the current read cursor when it does not exist yet; validate a
@@ -548,10 +547,6 @@ case "$CMD" in
     if [ -s "$STORE" ] && ! jq -c --argjson cursor "$CURSOR_SEQ" --argjson processed "$PROCESSED_SEQ" '
         select(.seq > $cursor or (.verdict == "captain" and .seq > $processed))
         | . + {unread: (.seq > $cursor)}' "$STORE"; then
-      fm_lock_release "$LOCK"
-      exit 1
-    fi
-    if ! advance_cursor "$LAST_SEQ"; then
       fm_lock_release "$LOCK"
       exit 1
     fi

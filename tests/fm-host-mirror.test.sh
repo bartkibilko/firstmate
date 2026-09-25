@@ -235,15 +235,17 @@ test_feed_resumes_reanchors_and_is_bounded() {
   as_session "$home" '
     add() { printf "%s" "$2" | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" append "$1"; }
     add captain "first ask"; add main "first answer"
-    "$MIRROR" feed s1 new > "$FM_HOME/feed.1"
+    "$MIRROR" feed s1 new > "$FM_HOME/feed.1" && "$MIRROR" commit
     add captain "second ask"
-    "$MIRROR" feed s1 resume > "$FM_HOME/feed.2"
-    "$MIRROR" feed s1 resume > "$FM_HOME/feed.3"
+    "$MIRROR" feed s1 resume > "$FM_HOME/feed.uncommitted"
+    "$MIRROR" feed s1 resume > "$FM_HOME/feed.2" && "$MIRROR" commit
+    "$MIRROR" feed s1 resume > "$FM_HOME/feed.3" && "$MIRROR" commit
     "$MIRROR" feed s2 resume > "$FM_HOME/feed.4"
   ' || fail "the first session failed"
   assert_equals "[captain] first ask
 [main] first answer" "$(cat "$home/feed.1")" "a new conversation must be fed this session's dialog"
-  assert_equals "[captain] second ask" "$(cat "$home/feed.2")" "a resumed conversation must be fed only what is new"
+  assert_equals "[captain] second ask" "$(cat "$home/feed.uncommitted")" "a resumed conversation must be fed only what is new"
+  assert_equals "[captain] second ask" "$(cat "$home/feed.2")" "a feed never committed to the engine must leave its entries for the next feed"
   assert_equals "" "$(cat "$home/feed.3")" "a resumed conversation with nothing new must be fed nothing"
   assert_equals "[captain] first ask
 [main] first answer
@@ -262,7 +264,7 @@ test_feed_resumes_reanchors_and_is_bounded() {
   assert_contains "$out" "[main] 7 yyy" "a bounded feed must keep the newest entries"
   assert_not_contains "$out" "[captain] a later session" "a bounded feed must drop the oldest entries"
   [ "${#out}" -le 16100 ] || fail "the feed was not bounded: ${#out} characters"
-  pass "mirror: the feed resumes from its cursor, re-anchors on a new conversation or session, and is bounded"
+  pass "mirror: the feed resumes from its committed cursor, re-anchors on a new conversation or session, and is bounded"
 }
 
 test_verified_writers() {
