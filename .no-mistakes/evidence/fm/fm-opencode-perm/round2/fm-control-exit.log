@@ -1,0 +1,15 @@
+$ composer state of idle relaunched worker: empty
+$ FM_HOME=<lab-home> fm-control.sh oc1 exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fmoc2.Om2d/home
+stopped oc1 harness=opencode backend=herdr endpoint=fm-lab-fm-oc-ctl-85614-14972:w1:p2 worktree=/Users/bart/.treehouse/proj-bf7647/1/proj
+rc=
+$ herdr agent get after exit:
+{"agent":"opencode","agent_session":{"agent":"opencode","kind":"id","source":"herdr:opencode","value":"ses_f287f0040ffeRowPT5JdI0KumL"},"agent_status":"idle","cwd":"/private/tmp/fmoc2.Om2d/home/projects/proj","focused":true,"foreground_cwd":"/Users/bart/.treehouse/proj-bf7647/1/proj","pane_id":"w1:p2","revision":25,"screen_detection_skipped":true,"state_change_seq":5,"tab_id":"w1:t2","terminal_id":"term_65c49cca4e9932","terminal_title":"bart@Mac-Studio-bart:~/.treehouse/proj-bf7647/1/proj","terminal_title_stripped":"bart@Mac-Studio-bart:~/.treehouse/proj-bf7647/1/proj","workspace_id":"w1"}
+
+$ pane tail after exit:
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+  Session   Grep hi in README.md
+  Continue  opencode -s ses_f287f0040ffeRowPT5JdI0KumL
+░▒▓ ~/.t/proj/1/proj │ @2b130dfc                                                                 ✔ │ 29s │ 09:39:36 ▓▒░

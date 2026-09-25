@@ -1,0 +1,18 @@
+== old: env = OPENCODE_CONFIG_CONTENT='{"permission":{"*":"allow"}}'
+== resolved permission (opencode debug config in project):
+{"*":"allow","edit":"ask","external_directory":"ask","bash":{"*":"ask","git *":"ask"}}
+== files after 120s:
+  proj/bash.txt: MISSING
+  proj/edit.txt: MISSING
+  outside/report.txt: MISSING
+== permission prompt visible in pane: 2
+== new: env = OPENCODE_PERMISSION='{"*":"allow","read":"allow","edit":"allow","glob":"allow","grep":"allow","list":"allow","bash":"allow","task":"allow","external_directory":"allow","todowrite":"allow","question":"allow","webfetch":"allow","websearch":"allow","lsp":"allow","doom_loop":"allow","skill":"allow","plan_enter":"allow","plan_exit":"allow"}'
+== resolved permission (opencode debug config in project):
+{"*":"allow","edit":"allow","external_directory":"allow","bash":"allow","read":"allow","glob":"allow","grep":"allow","list":"allow","task":"allow","todowrite":"allow","question":"allow","webfetch":"allow","websearch":"allow","lsp":"allow","doom_loop":"allow","skill":"allow","plan_enter":"allow","plan_exit":"allow"}
+== files after 10s:
+  proj/bash.txt: bash-ok
+  proj/edit.txt: edit-ok
+  outside/report.txt: report-ok
+== permission prompt visible in pane: 0
+== after completed turn: herdr agent_status=idle composer_state=empty
+== after typing an unsent draft: composer_state=pending

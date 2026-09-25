@@ -1,0 +1,10 @@
+Live Herdr 0.9.1 ANSI tail (20 rows) of an idle OpenCode 1.18.32 worker after its first --prompt turn:
+  ┃
+  ┃
+  ┃
+  ┃  Build · Haiku 4.5 IC FoundryIC (Anthropic)
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /private/var/folders/1t/xdmsfs7d20z3b1mxv_t2x6w80000gn/T/fm-oc-perm-new.BCOZ/proj            15.6K  ctrl+p commands
+
+classifier on full live capture:         unknown
+same capture minus the cwd/tokens footer: empty

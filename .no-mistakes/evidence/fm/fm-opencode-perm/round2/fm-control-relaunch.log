@@ -1,0 +1,16 @@
+$ fm-spawn.sh oc1 <proj> --scout --harness opencode --model claudeic/claude-haiku-4-5 --backend herdr  (done earlier; status:)
+done [at=1790321923]: README.md contains 'hi' exactly 1 time on line 1
+
+$ composer state before relaunch: (probe not captured in this log; fm-control performs its own proof)
+$ FM_HOME=<lab-home> fm-control.sh oc1 relaunch --note 'live relaunch proof'
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fmoc2.Om2d/home
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fmoc2.Om2d/home
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+relaunched oc1 harness=opencode from=opencode model=claudeic/claude-haiku-4-5 effort=default backend=herdr endpoint=fm-lab-fm-oc-ctl-85614-14972:w1:p2 worktree=/Users/bart/.treehouse/proj-bf7647/1/proj
+rc=0

@@ -1,0 +1,33 @@
+treehouse get
+░▒▓ /private/tmp/fmoc2.Om2d/home/projects/proj │ master  treehouse get                               1 х │ 09:38:16 ▓▒░
+🌳 Setting up worktree...
+🌳 Entered worktree at ~/.treehouse/proj-bf7647/1/proj. Type 'exit' to return.
+░▒▓ ~/.treehouse/proj-bf7647/1/proj │ @2b130dfc  export GOTMPDIR=/tmp/fm-oc1/gotmp                   1 х │ 09:38:17 ▓▒░
+export COMPACT_ADVISER_DISABLE=1
+░▒▓ ~/.t/proj-bf7647/1/proj │ @2b130dfc  export COMPACT_ADVISER_DISABLE=1                              ✔ │ 09:38:20 ▓▒░
+░▒▓ ~/.t/proj-bf7647/1/proj │ @2b130dfc  export FM_TASK_ID=oc1                                         ✔ │ 09:38:20 ▓▒░
+░▒▓ ~/.t/proj-bf7647/1/proj │ @2b130dfc  . '/tmp/fm-oc1+b68318d8fe340c9396304b80b1486d877e5c88bc4485af2e603af7d1da6f295a
+/launch.s1790321898.85669.9869.sh'
+                                   ▄
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+
+  Session   Firstmate task: check for "hi" in README.md
+  Continue  opencode -s ses_f287fa88dffeAHSbCro431Kdat
+
+░▒▓ ~/.t/proj/1/proj │ @2b130dfc  export GOTMPDIR=/tmp/fm-oc1/gotmp                              ✔ │ 42s │ 09:39:03 ▓▒░
+export COMPACT_ADVISER_DISABLE=1
+░▒▓ ~/.t/proj-bf7647/1/proj │ @2b130dfc  export COMPACT_ADVISER_DISABLE=1                              ✔ │ 09:39:07 ▓▒░
+░▒▓ ~/.t/proj-bf7647/1/proj │ @2b130dfc  export FM_TASK_ID=oc1                                         ✔ │ 09:39:07 ▓▒░
+░▒▓ ~/.t/proj-bf7647/1/proj │ @2b130dfc  . '/tmp/fm-oc1+b68318d8fe340c9396304b80b1486d877e5c88bc4485af2e603af7d1da6f295a
+/launch.s1790321946.91579.18858.sh'
+                                   ▄
+  █▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+  █  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+  ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+
+  Session   Grep hi in README.md
+  Continue  opencode -s ses_f287f0040ffeRowPT5JdI0KumL
+
+░▒▓ ~/.t/proj/1/proj │ @2b130dfc                                                                 ✔ │ 29s │ 09:39:36 ▓▒░
