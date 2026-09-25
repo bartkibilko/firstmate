@@ -158,6 +158,11 @@ unit_test_harness_seam_requires_the_marker() {
   [ "$stray" = "$ref" ] \
     || fail "FM_TEST_HARNESS without FM_TEST_SEAM changed harness detection ($stray != $ref)"
   # shellcheck disable=SC2016 # positional params expand in the child shell.
+  stray=$(env -u FM_TEST_SEAM CLAUDECODE=1 FM_TEST_HARNESS='1 omp' \
+    bash -c '. "$1"; fm_afk_launch_primary_harness' _ "$LAUNCH")
+  [ "$stray" = "$ref" ] \
+    || fail "a marker-shaped FM_TEST_HARNESS without FM_TEST_SEAM changed harness detection ($stray != $ref)"
+  # shellcheck disable=SC2016 # positional params expand in the child shell.
   pinned=$(FM_TEST_SEAM=1 CLAUDECODE=1 FM_TEST_HARNESS=omp \
     bash -c '. "$1"; fm_afk_launch_primary_harness' _ "$LAUNCH")
   [ "$pinned" = omp ] \

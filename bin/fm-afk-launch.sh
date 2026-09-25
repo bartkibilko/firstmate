@@ -197,12 +197,14 @@ fm_afk_launch_primary_harness() {
   # exact known-harness token is honored, so a stray or mistyped value falls
   # through to real detection; bin/fm-harness.sh's production detect_own
   # precedence never reads either variable.
-  case "${FM_TEST_SEAM:-}${FM_TEST_SEAM:+ }${FM_TEST_HARNESS:-}" in
-    "1 claude" | "1 codex" | "1 opencode" | "1 pi" | "1 pi-signed" | "1 grok" | "1 kimi" | "1 cursor" | "1 gemini" | "1 muse" | "1 rovo" | "1 omp" | "1 agy" | "1 devin" | "1 unknown")
-      printf '%s' "$FM_TEST_HARNESS"
-      return
-      ;;
-  esac
+  if [ "${FM_TEST_SEAM:-}" = 1 ]; then
+    case "${FM_TEST_HARNESS:-}" in
+      claude | codex | opencode | pi | pi-signed | grok | kimi | cursor | gemini | muse | rovo | omp | agy | devin | unknown)
+        printf '%s' "$FM_TEST_HARNESS"
+        return
+        ;;
+    esac
+  fi
   "$FM_AFK_LAUNCH_DIR/fm-harness.sh" 2>/dev/null || printf unknown
 }
 
