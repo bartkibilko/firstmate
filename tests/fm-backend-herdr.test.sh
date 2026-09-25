@@ -3819,6 +3819,7 @@ test_composer_state_opencode_shortcuts_below_leftbar() {
   printf '  ┃\n  ┃  Reply with OK.\n  ┃\n  ┃  Build · Big Pickle OpenCode Zen\n  ╹▀▀▀▀▀▀▀▀\n       tab agents  ctrl+p commands\n' > "$resp/2.out"
   printf '  ┃\n  ┃  Ask anything… "Fix a TODO in the codebase"\n  ┃\n  ┃  Build · Big Pickle OpenCode Zen\n  ╹▀▀▀▀▀▀▀▀\n       tab agents  ctrl+p commands\nWorking on request...\n' > "$resp/3.out"
   cp "$ROOT/tests/fixtures/opencode-herdr-1.18.32-idle.ansi" "$resp/4.out"
+  cp "$ROOT/tests/fixtures/opencode-herdr-1.18.32-session-idle.ansi" "$resp/5.out"
   fb=$(make_herdr_fakebin "$dir")
 
   out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
@@ -3833,6 +3834,9 @@ test_composer_state_opencode_shortcuts_below_leftbar() {
   out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_state default:w1:p2' "$ROOT" )
   [ "$out" = empty ] || fail "the real OpenCode idle capture clipped by Herdr should read empty, got '$out'"
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_state default:w1:p2' "$ROOT" )
+  [ "$out" = empty ] || fail "the real OpenCode session view after a --prompt turn should read empty, got '$out'"
   pass "fm_backend_herdr_composer_state: OpenCode shortcut furniture no longer blocks a proven empty composer"
 }
 

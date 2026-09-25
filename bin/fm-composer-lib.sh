@@ -1340,11 +1340,14 @@ _fm_composer_leftbar_floor_row() {  # <trimmed-row>
 }
 
 # OpenCode 1.18.32 draws this shortcut row immediately below its left-bar
-# floor. It is outside the input area but contiguous with the composer, so a
-# cursorless capture must skip exactly this row before the staleness probe.
+# floor: `tab agents  ctrl+p commands` on the home screen, and
+# `<cwd>  <tokens>  ctrl+p commands` in a session view (every fm-spawn worker
+# after its --prompt turn). It is outside the input area but contiguous with
+# the composer, so a cursorless capture must skip exactly this row before the
+# staleness probe.
 _fm_composer_opencode_shortcuts_row() {  # <trimmed-row>
   fm_composer_idle_matches "$1" \
-    '^tab[[:space:]]+agents[[:space:]]+ctrl\+p[[:space:]]+commands$' sensitive
+    '^(tab[[:space:]]+agents|[/~].*)[[:space:]]+ctrl\+p[[:space:]]+commands$' sensitive
 }
 
 # _fm_composer_row_is_composer_furniture: 0 when <trimmed-row> is DEMONSTRABLY

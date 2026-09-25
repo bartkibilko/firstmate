@@ -733,6 +733,9 @@ The leading blank left-bar row had fallen outside the tail, so the prior classif
 `tests/fixtures/opencode-herdr-1.18.32-idle.ansi` holds that live capture excerpt, and `tests/fm-composer-lib.test.sh` checks `empty` for its muted hint, `pending` for the same text in a bright draft, and `unknown` when styling is unavailable.
 `tests/fm-backend-herdr.test.sh` drives the same capture through the Herdr adapter and keeps the unclaimed-activity refusal.
 `FM_OPENCODE_HERDR_COMPOSER_LIVE=1 tests/fm-opencode-herdr-composer-live-e2e.test.sh` returned `ok - OpenCode 1.18.32 on Herdr 0.9.1: live idle composer is provably empty`.
+After a `--prompt` turn (how fm-spawn launches every worker), OpenCode 1.18.32 idles in its session view, where the row below the `╹▀` floor is `<cwd>  <tokens>  ctrl+p commands` instead of `tab agents  ctrl+p commands`; the classifier previously reported `unknown` for that visibly empty composer.
+`tests/fixtures/opencode-herdr-1.18.32-session-idle.ansi` holds that live Herdr 0.9.1 tail with the temporary paths rewritten, and both unit suites check `empty` for it.
+`FM_OPENCODE_HERDR_COMPOSER_LIVE=1 FM_OPENCODE_HERDR_COMPOSER_MODEL=<provider/model> tests/fm-opencode-herdr-composer-live-e2e.test.sh` also returned `ok - OpenCode 1.18.32 on Herdr 0.9.1: idle session-view composer after a --prompt turn is provably empty`.
 `tests/fm-spawn-dispatch-profile.test.sh` checks that the generated launch carries all named permission overrides.
 
 ### 2026-09-20 claude 2.1.236 statusLine footer through Herdr

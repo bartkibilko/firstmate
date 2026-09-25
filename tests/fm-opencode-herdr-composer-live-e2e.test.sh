@@ -51,3 +51,32 @@ done
 [ "$verdict" = empty ] \
   || fail "OpenCode $version on Herdr $herdr_version: idle composer classified $verdict, expected empty"
 pass "OpenCode $version on Herdr $herdr_version: live idle composer is provably empty"
+
+# fm-spawn always launches OpenCode with --prompt, so a real worker idles in
+# the session view, whose footer below the composer is `<cwd> <tokens> ctrl+p
+# commands`. That needs a working model, so it runs only when one is named.
+model=${FM_OPENCODE_HERDR_COMPOSER_MODEL:-}
+if [ -z "$model" ]; then
+  printf 'skip - set FM_OPENCODE_HERDR_COMPOSER_MODEL to check the post---prompt session view\n'
+  exit 0
+fi
+created=$(lab workspace create --cwd "$ROOT" --label fm-opencode-session --no-focus) \
+  || fail 'could not create the OpenCode session lab workspace'
+pane=$(printf '%s' "$created" | jq -er '.result.root_pane.pane_id') \
+  || fail 'the OpenCode session lab workspace returned no pane id'
+lab pane run "$pane" "opencode --model '$model' --prompt 'Reply with OK and nothing else.'" >/dev/null \
+  || fail 'could not launch OpenCode with --prompt in the lab pane'
+verdict=unknown worked=0
+for _ in $(seq 1 120); do
+  state=$(lab agent get "$pane" 2>/dev/null | jq -r '.result.agent.agent_status // empty')
+  [ "$state" = working ] && worked=1
+  if [ "$worked" = 1 ] && { [ "$state" = idle ] || [ "$state" = done ]; }; then
+    verdict=$(fm_backend_herdr_composer_state "$HERDR_LAB_SESSION:$pane")
+    [ "$verdict" = empty ] && break
+  fi
+  sleep 1
+done
+[ "$worked" = 1 ] || fail "OpenCode $version on Herdr $herdr_version: the --prompt turn never started"
+[ "$verdict" = empty ] \
+  || fail "OpenCode $version on Herdr $herdr_version: idle session-view composer after --prompt classified $verdict, expected empty"
+pass "OpenCode $version on Herdr $herdr_version: idle session-view composer after a --prompt turn is provably empty"

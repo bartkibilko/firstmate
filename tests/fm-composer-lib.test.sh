@@ -655,6 +655,14 @@ test_matrix_opencode_leftbar_signals() {
   assert_screen "opencode bright placeholder-like draft on clipped Herdr capture" pending "$CAPS_STYLED" "$bright"
   assert_screen "opencode clipped plain capture lacks muted-hint proof" unknown "$CAPS_PLAIN" \
     "$(printf '%s\n' "$clipped" | fm_composer_strip_ansi)"
+  # Real Herdr 0.9.1 / OpenCode 1.18.32 session view after an fm-spawn
+  # --prompt turn: the row below the floor is `<cwd>  <tokens>  ctrl+p commands`.
+  assert_screen "opencode 1.18.32 session-view idle capture on herdr" empty "$CAPS_STYLED" \
+    "$(cat "$ROOT/tests/fixtures/opencode-herdr-1.18.32-session-idle.ansi")"
+  assert_screen "opencode typed composer above session-view footer on herdr" pending "$CAPS_STYLED" \
+    "$captured_pending"$'\n   /Users/captain/work/proj            15.6K  ctrl+p commands'
+  assert_screen "opencode activity below session-view footer on herdr" unknown "$CAPS_STYLED" \
+    "$captured_idle"$'\n   /Users/captain/work/proj            15.6K  ctrl+p commands\nWorking on request...'
   # Signal separation: with the idle pattern overridden to something that
   # cannot match, a DIM-styled hint still proves empty through the ghost strip.
   out=$(FM_COMPOSER_IDLE_RE='^NEVER-MATCHES$' fm_composer_classify_screen "$CAPS_TMUX" "$dim_screen" 1)
