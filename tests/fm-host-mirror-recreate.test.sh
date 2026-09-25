@@ -18,11 +18,13 @@ fi
 exec "$REAL_GIT" "$@"
 SH
 chmod +x "$TMP/bin/git"
-export REAL_GIT=$(command -v git)
+REAL_GIT=$(command -v git)
+export REAL_GIT
 export FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$TMP" FM_STATE_OVERRIDE="$TMP/state" FM_CONFIG_OVERRIDE="$TMP/config"
 export PATH="$TMP/bin:$PATH"
 # The fake harness owns the lock and delivers two hook payloads, with a
 # committed feed followed by deletion/recreation of the mirror file.
+# shellcheck disable=SC2016 # Variables expand in the child shell, not this test shell.
 "$TMP/bin/claude" -c '
   set -eu
   printf "%s\n" "$$" > "$FM_STATE_OVERRIDE/.lock"

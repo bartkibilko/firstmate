@@ -367,8 +367,10 @@ end_cooldown() {  # <home> [seconds]
   local health="$1/state/.supervision-host-health" tmp
   grep -q '^retry_after=[1-9]' "$health" 2>/dev/null || fail "the latch recorded no probe time"
   tmp=$(mktemp "$health.XXXXXX")
-  sed -e 's/^retry_after=.*/retry_after=1/' ${2:+-e "s/^cooldown=.*/cooldown=$2/"} "$health" > "$tmp" \
-    && mv -f "$tmp" "$health" || fail "fixture: could not move the latch's probe time"
+  if ! { sed -e 's/^retry_after=.*/retry_after=1/' ${2:+-e "s/^cooldown=.*/cooldown=$2/"} "$health" > "$tmp" \
+    && mv -f "$tmp" "$health"; }; then
+    fail "fixture: could not move the latch's probe time"
+  fi
 }
 
 park_again() {  # <home>
