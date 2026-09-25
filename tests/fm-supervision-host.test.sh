@@ -49,7 +49,8 @@ FAKE_CLAUDE="$FAKEBIN/claude"
 #               the turn reports verdict captain
 #   fail        exit nonzero at once, with no result and no report (an engine
 #               error the latch counts)
-#   hang        start a descendant in a process group of its own, then block
+#   hang        before anything else, start a descendant in a process group of
+#               its own, then block
 STUB="$TMP_ROOT/engine-stub"
 cat > "$STUB" <<'SH'
 #!/usr/bin/env bash
@@ -67,6 +68,12 @@ result() {
   printf '{"type":"result","subtype":"success","is_error":false,"num_turns":3,"total_cost_usd":%s,' "$(awk -v n="$n" 'BEGIN { print n * 0.25 }')"
   printf '"usage":{"input_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":10,"output_tokens":20},"session_id":"stub"}\n'
 }
+if [ "$mode" = hang ]; then
+  perl -e 'setpgrp(0, 0); exec "sleep", $ARGV[0]' "$FM_TEST_STUB_MAX_BLOCK_SECONDS" &
+  printf '%s\n' "$!" > "$FM_HOME/orphan-pid"
+  sleep "$FM_TEST_STUB_MAX_BLOCK_SECONDS"
+  exit 0
+fi
 drain=$("$FM_REPO/bin/fm-wake-drain.sh" 2>&1)
 printf '%s\n' "$drain" > "$FM_HOME/engine-drain.$n"
 ack=$(printf '%s\n' "$drain" | sed -n 's/^WAKE_ACK_REQUIRED: after handling completes run bin\/fm-wake-drain.sh //p' | tail -1)
@@ -95,11 +102,6 @@ case "$mode" in
     result
     ;;
   noreport) result ;;
-  hang)
-    perl -e 'setpgrp(0, 0); exec "sleep", $ARGV[0]' "$FM_TEST_STUB_MAX_BLOCK_SECONDS" &
-    printf '%s\n' "$!" > "$FM_HOME/orphan-pid"
-    sleep "$FM_TEST_STUB_MAX_BLOCK_SECONDS"
-    ;;
 esac
 SH
 chmod +x "$STUB"
@@ -147,6 +149,9 @@ make_home() {  # <name> <attended|away> [config line]
   make_fake_crew_state "$home/fakebin" >/dev/null
   printf '%s\n' "${3:-}" > "$home/config/supervision-host"
   [ -n "${3:-}" ] || : > "$home/config/supervision-host"
+  # The captain has spoken in this session, so the mirror can vouch for it.
+  [ "$2" != attended ] \
+    || printf '{"hook_event_name":"UserPromptSubmit","prompt_id":"p0","prompt":"watch the fleet for me"}' > "$home/mirror-seed.0"
   printf 'project=demo\nwindow=fm-demo\nharness=claude\n' > "$home/state/demo.meta"
   echo handle > "$home/stub-mode"
   if [ "$2" = away ]; then
@@ -369,7 +374,8 @@ end_cooldown() {  # <home> [seconds]
 park_again() {  # <home>
   rm -f "$1/host.rc"
   : > "$1/park.go"
-  wait_until 150 watcher_live "$1" || fail "the next park never started a watcher cycle: $(cat "$1/host.out")"
+  wait_until 150 watcher_live "$1" \
+    || fail "the next park never started a watcher cycle: $(cat "$1/host.out"; tail -n 5 "$1/state/.supervision-host.log" 2>/dev/null)"
 }
 
 # BRANCH OUTCOMES belongs to an opted-in home off Pi: without the file the drain
@@ -446,7 +452,7 @@ test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main() {
   first="$home/engine-call.1"
   assert_re '^actor=branch$' "$first" "the attended engine must run as the branch actor"
   assert_no_re '^POSTURE: AWAY' "$first" "an attended wake must carry no away tail"
-  assert_re '^arg=FIRSTMATE SUPERVISION WAKE: signal: ' "$first" "the attended wake must carry the close"
+  assert_re '^(arg=)?FIRSTMATE SUPERVISION WAKE: signal: ' "$first" "the attended wake must carry the close"
   assert_re '	handled	turn=[^	]*	posture=attended	' "$home/state/.supervision-host.log" "the ledger must record the attended turn"
   assert_grep '"verdict":"routine"' "$home/state/branch-outcomes.jsonl" "the engine's routine report did not reach the store"
   assert_no_grep 'demo.status' "$home/state/.wake-queue" "the engine's acknowledgement did not consume the wake"
@@ -579,11 +585,13 @@ park_after_stop() {  # <home>
   park_again "$1"
 }
 
-# A host that reaches its park boundary after feeding the dialog mirror, but
-# before the engine turn runs, has handed the engine nothing: the next host
-# resumes the same engine conversation and must still carry that dialog.
-test_boundary_before_the_turn_leaves_the_dialog_for_the_next_host() {
-  local home real_node second
+# Dialog counts as delivered only once the turn that carried it is accepted
+# with its report. A host that reaches its park boundary after feeding the
+# mirror but before the turn, or is stopped mid-turn, leaves the conversation
+# resumable without it, so the next turn must still carry it; a turn with no
+# report starts a new conversation, which must carry it too.
+test_undelivered_dialog_is_fed_again_on_the_next_turn() {
+  local home real_node second third fourth
   home=$(make_home mirror-boundary attended)
   real_node=$(command -v node)
   cat > "$home/fakebin/node" <<SH
@@ -619,7 +627,68 @@ SH
   assert_re '^\[captain\] second ask, never handed over$' "$second" \
     "dialog fed to a wake that never reached the engine must reach the next turn"
   assert_no_re '^\[captain\] first ask$' "$second" "a resumed conversation must not be fed dialog it already has"
-  pass "host: a park boundary before the engine turn leaves its dialog for the next host's turn"
+
+  printf '{"hook_event_name":"UserPromptSubmit","prompt_id":"p3","prompt":"third ask, turn stopped"}' > "$home/mirror-seed.3"
+  kill -TERM "$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")"
+  wait_until 200 host_exited "$home" || fail "mirror boundary: the second handling host did not stop on TERM"
+  echo hang > "$home/stub-mode"
+  park_after_stop "$home"
+  append_status "$home" 'stopped mid-turn'
+  wait_until 250 test -e "$home/engine-call.3" || fail "mirror boundary: the stopped turn never started"
+  assert_re '^\[captain\] third ask, turn stopped$' "$home/engine-call.3" "fixture: the stopped turn did not carry the third dialog"
+  kill -TERM "$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")"
+  wait_until 200 host_exited "$home" || fail "mirror boundary: the host did not stop mid-turn on TERM"
+  echo handle > "$home/stub-mode"
+  park_after_stop "$home"
+  append_status "$home" 'handled after the stop'
+  wait_until 250 handled_at_least "$home" 3 || fail "mirror boundary: the wake after the stop was not handled: $(cat "$home/state/.supervision-host.log")"
+  third="$home/engine-call.4"
+  assert_re '^arg=--resume$' "$third" "fixture: the turn after the stop did not resume the conversation"
+  assert_re '^\[captain\] third ask, turn stopped$' "$third" "dialog of a turn stopped before its report must reach the next turn"
+  assert_no_re '^\[captain\] second ask' "$third" "a resumed conversation must not be fed dialog a handled turn delivered"
+
+  printf '{"hook_event_name":"UserPromptSubmit","prompt_id":"p4","prompt":"fourth ask, turn unreported"}' > "$home/mirror-seed.4"
+  kill -TERM "$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")"
+  wait_until 200 host_exited "$home" || fail "mirror boundary: the third handling host did not stop on TERM"
+  echo noreport > "$home/stub-mode"
+  park_after_stop "$home"
+  append_status "$home" 'no report'
+  wait_until 250 host_exited "$home" || fail "mirror boundary: the unreported turn did not hand its wake back"
+  assert_re '^\[captain\] fourth ask, turn unreported$' "$home/engine-call.5" "fixture: the unreported turn did not carry the fourth dialog"
+  main_drain_and_ack "$home"
+  echo handle > "$home/stub-mode"
+  park_again "$home"
+  append_status "$home" 'handled after no report'
+  wait_until 250 handled_at_least "$home" 4 || fail "mirror boundary: the wake after the unreported turn was not handled: $(cat "$home/state/.supervision-host.log")"
+  fourth="$home/engine-call.6"
+  assert_re '^\[captain\] fourth ask, turn unreported$' "$fourth" "dialog of a turn that recorded no report must reach the next turn"
+  pass "host: dialog a turn never completed with its report (a park boundary, a stopped turn, no report) reaches the next turn"
+}
+
+# Until the mirror holds captain text from this main session, the engine has
+# not heard the captain, so every attended close stays main's.
+test_attended_close_stays_main_until_the_mirror_holds_captain_text() {
+  local home
+  home=$(make_home attended-unheard attended)
+  rm -f "$home/mirror-seed.0"
+  printf '{"hook_event_name":"Stop","prompt_id":"p1","last_assistant_message":"Main replied to an unmirrored first prompt."}' > "$home/mirror-seed.1"
+  start_session "$home"
+  park_again "$home"
+  append_status "$home" 'before the captain is heard'
+  wait_until 200 host_exited "$home" || fail "unheard: the close did not reach main"
+  assert_re '^signal: .*demo.status' "$home/host.out" "the close must carry the watcher's reason line"
+  assert_no_re '^supervision-host' "$home/host.out" "the close must reach main exactly as the arm printed it"
+  [ "$(engine_calls "$home")" -eq 0 ] || fail "unheard: the engine ran before the mirror held the captain's words"
+  assert_re '	pass-through	attended	the dialog mirror holds no captain text from this main session yet	' \
+    "$home/state/.supervision-host.log" "the ledger must record why the close stayed on main"
+  main_drain_and_ack "$home"
+
+  printf '{"hook_event_name":"UserPromptSubmit","prompt_id":"p2","prompt":"keep the export worker on low effort"}' > "$home/mirror-seed.2"
+  park_again "$home"
+  append_status "$home" 'after the captain is heard'
+  wait_until 250 handled_at_least "$home" 1 || fail "unheard: the close was not handled once the captain was heard: $(cat "$home/host.out"; cat "$home/state/.supervision-host.log")"
+  assert_re '^\[captain\] keep the export worker on low effort$' "$home/engine-call.1" "the first engine wake must carry the captain's words"
+  pass "host: every attended close stays main's until the mirror holds this session's captain text"
 }
 
 test_latch_trips_after_two_engine_errors_then_probes_and_recovers() {
@@ -832,7 +901,7 @@ test_outcome_after_the_return_survives_a_host_killed_at_the_turn_end() {
   start_host "$home"
   wait_until 250 host_exited "$home" || fail "return-first: the next host did not resurface the queued outcome"
   assert_re '^check: rearm-resurface$' "$home/host.out" "the next host's first cycle must resurface the queue"
-  assert_re '	pass-through	attended	main-only	check: rearm-resurface' "$home/state/.supervision-host.log" "the attended resurface must reach main"
+  assert_re '	pass-through	attended	[^	]+	check: rearm-resurface' "$home/state/.supervision-host.log" "the attended resurface must reach main"
   drained=$(FM_HOME="$home" "$ROOT/bin/fm-wake-drain.sh" 2>&1)
   assert_contains "$drained" "supervision-host outcome 1 for demo [routine] was recorded after the captain returned" \
     "main's drain must present the outcome the killed host never handed off"
@@ -1223,7 +1292,8 @@ test_captain_leaving_mid_turn_keeps_its_captain_outcome_for_the_return
 test_attended_main_only_close_passes_straight_to_main
 test_attended_primary_without_a_verified_mirror_passes_through
 test_attended_wake_carries_the_dialog_mirror
-test_boundary_before_the_turn_leaves_the_dialog_for_the_next_host
+test_undelivered_dialog_is_fed_again_on_the_next_turn
+test_attended_close_stays_main_until_the_mirror_holds_captain_text
 test_latch_trips_after_two_engine_errors_then_probes_and_recovers
 test_latch_hands_away_wakes_back_with_a_line
 test_away_wake_is_handled_on_the_engine_and_never_reaches_main

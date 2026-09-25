@@ -52,7 +52,7 @@ The daemon's retirement and turning the host on by default are later steps of th
 The posture is the away-posture record, read at every close and again when a turn starts, exactly as the Pi branch reads it.
 
 Attended, the host asks the Pi branch's offer rule (`branchOfferForWake` in `.pi/extensions/lib/fm-branch-dispatch.ts`, through `bin/fm-branch-dispatch.mjs offer`) whether the branch may take the close, so a close reaches main off Pi exactly when it would on Pi: a check trigger, a decision-owned signal or stale trigger, and a scan that is unsafe or holds nothing for the branch stay main's.
-It also passes the close through unchanged when the home names no usable engine, node is missing, the primary has no verified dialog mirror, or the session is cooling down after engine errors ("The broken-session latch" below).
+It also passes the close through unchanged when the home names no usable engine, node is missing, the primary has no verified dialog mirror, the mirror holds no captain text from this main session yet, or the session is cooling down after engine errors ("The broken-session latch" below).
 A close the engine takes is handled as below; a handled wake with only routine outcomes never reaches main, and a handled wake that recorded a captain outcome exits with one `supervision-host: branch-outcome:` line and without the close it handled ("Captain outcomes" below).
 A turn that fails hands its close to main with one `supervision-host:` line, as away.
 Main-only rows that share the queue with the branch's rows stay queued for main, which is woken for each on its own triggering close, as on Pi.
@@ -80,6 +80,9 @@ Tool traffic is never mirrored; the engine reads files and records itself.
 A new engine conversation re-anchors on the current main session's newest entries, and a resumed one gets only what is new, so an earlier session's dialog never steers today's.
 omp has no verified writer yet, because no omp was available to prove one against, so an omp home keeps every attended close on main; its away posture needs no mirror and is unchanged.
 A captain message typed while an engine turn is already running reaches the engine at its next wake.
+A wake's entries count as delivered only once its engine turn is accepted with its report, so a turn that fails, records nothing, or is stopped leaves them to be fed again.
+Until the mirror holds captain text from the current main session, every attended close stays main's, so the engine never judges a session whose captain it has not heard.
+Follow-up: a Grok or OpenCode session takes the fleet lock during its first turn, so its first captain prompt is never mirrored; the gate opens at the captain's next prompt, and that first prompt stays missing from the engine's view until its writers can record it.
 
 ## Captain outcomes
 

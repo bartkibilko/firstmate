@@ -51,8 +51,9 @@
 # prints what the next wake carries, one "[captain] ..." or "[main] ..." entry
 # after another, oldest first, and stages the cursor it would reach in
 # $STATE/.host-mirror-cursor.next; `commit` advances the cursor to it once the
-# wake is handed to the engine, so a wake that never reaches the engine leaves
-# its entries unread for the next one. A resumed conversation
+# engine turn that carried the wake is accepted with its report, so a wake the
+# engine never completed leaves its entries unread for the next one. A resumed
+# conversation
 # gets the current main session's entries after the cursor; a new one (every
 # main session start, rotation, or failed turn) gets the current main
 # session's newest entries, so a fresh conversation re-anchors on this
@@ -60,6 +61,12 @@
 # 16000 characters, newest kept, with one line naming how many earlier entries
 # it left out. Mirrored text is context for judgment and authorizes nothing
 # (bin/fm-branch-prompt.sh "Context channels").
+#
+# CAPTURED. `captured` exits 0 once the mirror holds captain text from the
+# current main session. Until then the host takes no attended wake: a writer
+# may have missed the session's opening prompt (a Grok or OpenCode session
+# takes the fleet lock during its first turn, so that turn's prompt is out of
+# scope), and the engine must not judge without the captain's words.
 #
 # VERIFIED WRITERS. `verified <harness>` exits 0 for a primary whose writers
 # were proven against the real harness (docs/supervision-host.md "The dialog
@@ -72,10 +79,11 @@
 #                                           one entry's text on stdin (plugin writers)
 #   fm-host-mirror.sh feed <session> new|resume
 #   fm-host-mirror.sh commit
+#   fm-host-mirror.sh captured
 #   fm-host-mirror.sh verified <harness>
 # hook, append, and commit always exit 0 and print nothing; feed exits 1 when
 # the mirror could not be read, and prints nothing when there is nothing to
-# feed.
+# feed; captured prints nothing and exits 1 when it cannot say yes.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -90,7 +98,7 @@ MIRROR_KEEP=200
 FEED_CAP=16000
 
 usage() {
-  sed -n '/^# Usage:/,/^# hook and append/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//' >&2
+  sed -n '/^# Usage:/,/^# hook, append, and commit/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -105,13 +113,15 @@ case "${1:-}" in
     # without the file, and a crewmate worktree with no config/, stay inert.
     [ -f "$CONFIG/supervision-host" ] || exit 0
     ;;
-  feed|commit) ;;
+  feed|commit|captured) ;;
   -h|--help) sed -n '2,/^set -u/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) usage ;;
 esac
 
-command -v jq >/dev/null 2>&1 || exit 0
-[ -d "$STATE" ] || exit 0
+if ! command -v jq >/dev/null 2>&1 || [ ! -d "$STATE" ]; then
+  [ "$1" != captured ] || exit 1
+  exit 0
+fi
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
@@ -255,6 +265,12 @@ case "$1" in
     writer_in_scope || exit 0
     append_entry "$TAG" "$TEXT" "$ID"
     exit 0
+    ;;
+  captured)
+    [ "$#" -eq 1 ] || usage
+    jq -Rne --arg key "$(fm_supervision_host_main_key "$STATE")" \
+      'any(inputs | fromjson? | select(type == "object"); .key == $key and .tag == "captain")' "$MIRROR" >/dev/null 2>&1
+    exit $?
     ;;
   commit)
     [ "$#" -eq 1 ] || usage
