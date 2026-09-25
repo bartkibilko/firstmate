@@ -624,7 +624,7 @@ test_matrix_opencode_leftbar_signals() {
   # blanks, and a Build-mode footer. Two independent idle signals: the shared
   # idle-placeholder pattern (works on plain captures) and the ghost strip
   # (works on styled captures even if the pattern is overridden away).
-  local screen typed dim_screen captured_idle captured_pending out
+  local screen typed dim_screen captured_idle captured_pending clipped bright out
   screen=$'  ┃\n  ┃  Ask anything... "What is the tech stack?"\n  ┃\n  ┃  Build · GPT-5.5 Fast OpenAI · high\n  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'
   dim_screen=$'  ┃\n  ┃  '"${ESC}[2mAsk anything...${ESC}[0m"$'\n  ┃\n  ┃  Build · GPT-5.5 Fast OpenAI · high\n  ╹▀▀▀▀'
   assert_screen "opencode idle on tmux (cursor on hint)" empty "$CAPS_TMUX" "$dim_screen" 1
@@ -647,6 +647,14 @@ test_matrix_opencode_leftbar_signals() {
     "$captured_idle"$'\n       tab agents  ctrl+p commands\nWorking on request...'
   assert_screen "opencode shortcut row without the composer floor is unproved" unknown "$CAPS_STYLED" \
     $'┃\n┃  Ask anything… "Fix a TODO in the codebase"\n┃\n┃  Build · Big Pickle OpenCode Zen\n       tab agents  ctrl+p commands'
+  # Real Herdr 0.9.1 / OpenCode 1.18.32 ANSI capture, clipped by the same
+  # 20-row tail the adapter reads. The first surviving row is the idle hint.
+  clipped=$(cat "$ROOT/tests/fixtures/opencode-herdr-1.18.32-idle.ansi")
+  assert_screen "opencode 1.18.32 clipped Herdr idle capture" empty "$CAPS_STYLED" "$clipped"
+  bright=${clipped//38;2;148;156;184m/38;2;255;255;255m}
+  assert_screen "opencode bright placeholder-like draft on clipped Herdr capture" pending "$CAPS_STYLED" "$bright"
+  assert_screen "opencode clipped plain capture lacks muted-hint proof" unknown "$CAPS_PLAIN" \
+    "$(printf '%s\n' "$clipped" | fm_composer_strip_ansi)"
   # Signal separation: with the idle pattern overridden to something that
   # cannot match, a DIM-styled hint still proves empty through the ghost strip.
   out=$(FM_COMPOSER_IDLE_RE='^NEVER-MATCHES$' fm_composer_classify_screen "$CAPS_TMUX" "$dim_screen" 1)

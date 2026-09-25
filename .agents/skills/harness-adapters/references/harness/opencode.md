@@ -24,7 +24,8 @@ That behavior was observed live during an upgrade from 1.15.7 to 1.17.3.
 If the pane shows the exit banner, use the verified resume path above.
 OpenCode 1.18.32 [merges `OPENCODE_PERMISSION` after loaded config](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/opencode/src/config/config.ts#L2543-L2569), while [its permission schema](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/core/src/v1/config/permission.ts#L318-L355) lists the supported named keys.
 OpenCode 1.18.32 draws a `tab agents  ctrl+p commands` shortcut row directly below its left-bar composer.
-The shared composer classifier recognizes that row as footer furniture, so an idle composer can be proved empty on a cursorless Herdr capture while typed text and unclaimed activity still refuse exit.
+The shared composer classifier recognizes that row and the muted idle hint when Herdr's bounded capture omits the composer's first row, so a live idle composer can be proved empty for exit and relaunch.
+Bright typed text and unclaimed activity retain their refusing verdicts.
 
 ## Busy-queued Enter
 

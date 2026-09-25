@@ -1275,8 +1275,19 @@ _fm_composer_classify_bare_wrap() {  # <screen> <styled> <glyph-row> <cursor-row
 # can prove it real, unknown otherwise.
 _fm_composer_classify_leftbar() {  # <screen> <styled> <first-row> <last-row>
   local screen=$1 styled=$2 first=$3 last=$4
-  local row raw content pending_seen=0 footer_re leading_blank=1 placeholder_position=0
+  local row raw content muted floor footer pending_seen=0 footer_re leading_blank=1 placeholder_position=0
   footer_re=${FM_COMPOSER_LEFTBAR_FOOTER_RE:-$FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT}
+  # Herdr's bounded tail can start ON OpenCode's idle hint, losing the blank
+  # left-bar row that normally distinguishes a hint from a typed draft. In
+  # that case require the mode footer, the closing floor, and a hint whose
+  # muted truecolor styling strips at OpenCode's verified 1.18.32 luminance.
+  # Bright placeholder-like input still counts as pending.
+  footer=$(_fm_composer_row_content "$(_fm_composer_screen_row "$last" "$screen")" 0)
+  case "$footer" in '┃'*) footer=${footer#┃} ;; esac
+  fm_composer_normalize_trim_var footer
+  floor=$(_fm_composer_screen_row "$((last + 1))" "$screen")
+  floor=$(printf '%s\n' "$floor" | fm_composer_strip_ansi)
+  fm_composer_normalize_trim_var floor
   row=$first
   while [ "$row" -le "$last" ]; do
     raw=$(_fm_composer_screen_row "$row" "$screen")
@@ -1295,6 +1306,15 @@ _fm_composer_classify_leftbar() {  # <screen> <styled> <first-row> <last-row>
     if [ "$placeholder_position" = 1 ] \
        && fm_composer_idle_matches "$content" "${FM_COMPOSER_IDLE_RE:-$FM_COMPOSER_IDLE_RE_DEFAULT}" insensitive; then
       row=$((row + 1)); continue
+    fi
+    if [ "$row" -eq "$first" ] && [ "$styled" = 1 ] \
+       && fm_composer_idle_matches "$content" "${FM_COMPOSER_IDLE_RE:-$FM_COMPOSER_IDLE_RE_DEFAULT}" insensitive \
+       && fm_composer_idle_matches "$footer" "$footer_re" sensitive \
+       && _fm_composer_leftbar_floor_row "$floor"; then
+      muted=$(FM_COMPOSER_GHOST_LUMA_MAX=160 _fm_composer_row_content "$raw" 1)
+      case "$muted" in '┃'*) muted=${muted#┃} ;; esac
+      fm_composer_normalize_trim_var muted
+      if [ -z "$muted" ]; then row=$((row + 1)); continue; fi
     fi
     if [ "$row" -eq "$last" ] \
        && fm_composer_idle_matches "$content" "$footer_re" sensitive; then
