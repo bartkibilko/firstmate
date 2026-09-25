@@ -706,9 +706,9 @@ ok - opencode 1.18.32: the tracked registrations mirrored the captain prompt and
 ok - host mirror live: 5 harness(es) proved their writers
 ```
 
-The guard now covers Claude, Codex, and Cursor only; Grok and OpenCode retain registered writers, but their first prompts were not captured, so they are not verified for attended use.
+That run predates the removal of the Grok and OpenCode writers ("Not fixed here" below); the guard now covers Claude, Codex, and Cursor only.
 
-The payloads the writers read, captured from the real harnesses:
+The payloads the writers read, captured from the real harnesses (the Grok and OpenCode rows describe writers since removed):
 
 | Primary | Captain text | Main text |
 | --- | --- | --- |
@@ -720,7 +720,7 @@ The payloads the writers read, captured from the real harnesses:
 
 Each non-Pi primary, with `config/supervision-host` naming `claude`, supervised the same session: two or three gated workers, a worker's keyed decision, the captain's standing words that one result mattered and another was routine, gates opened one at a time, `/quiet` (plain words on Codex, Cursor, Grok, and OpenCode, whose TUIs reject an unknown slash command), one more worker, an away window, the gate opening while away, and the return.
 
-The table records those sessions as they ran; the rows marked "today" no longer describe Grok and OpenCode, whose writers remain registered but are not verified from the first captain prompt ("Not fixed here" below), so today every attended close there reaches main and `/quiet` there launches the daemon.
+The table records those sessions as they ran; the rows marked "today" no longer describe Grok and OpenCode, which have since lost their verified attended mirror ("Not fixed here" below), so today every attended close there reaches main and `/quiet` there launches the daemon.
 
 | Case | Observed |
 | --- | --- |
@@ -735,6 +735,19 @@ The table records those sessions as they ran; the rows marked "today" no longer 
 | Codex main restarted mid-session | its first close resurfaced to main as `check: rearm-resurface` and the mirror re-keyed to the new session |
 
 The Pi primary, without the file, ran the same attended, away, and return session on its in-process branch with the changed branch prompt: the branch reported a finished local-only branch as a captain outcome for main to land, and main landed and acknowledged each one.
+
+After review changed the attended behavior (Grok and OpenCode lost their writers, a missing, unreadable, or malformed mirror hands the attended wake to main, the mirror cursor commits only after a reported turn, `quiet-check` reports a paused session until a probe succeeds, and the dialog files became owner-only), the affected cases were driven again on the real engine on 2026-09-25 on macOS 26.5.2 arm64, with Claude Code 2.1.282 as engine and primary (`sonnet`), grok 1.0.41 (`grok-4.7` high), OpenCode 1.18.32 (`opencode/big-pickle`), and Pi 0.82.0 workers, in disposable lab homes on private tmux sockets, with the same lab wrapper for engine failures:
+
+| Case | Observed |
+| --- | --- |
+| Attended captain outcome (Claude) | a finished worker became captain row 1, the host exited with `branch-outcome`, main drained `BRANCH OUTCOMES`, landed the work, and acknowledged it with `mark-processed` |
+| Attended routine outcome (Claude) | routine row 2, no host exit, and main's pane unchanged |
+| Mirror missing, then a malformed entry (Claude, attended) | each wake reached main with `the supervision session could not take this wake: the dialog mirror could not be read; this wake is yours`, and the cursor did not move |
+| Latch and `/quiet` (Claude) | two injected failures latched with a 300-second cooldown; `/quiet` in the primary reported the session paused with its next retry time; with the retry time passed and no probe yet, `quiet-check` still reported it paused; a successful probe exited with `the supervision session recovered after a successful probe`, and `quiet-check` returned to its ordinary statement |
+| Away (Claude) | the record and no daemon; an away wake handled on the engine with main's pane unchanged; an injected failure reached main with `the away session could not take this wake: the engine turn failed (exit 3)`; the gated finish was captain row 5 `per your away instructions:`, and after the return main landed it and acknowledged it |
+| Grok and OpenCode | each attended wake passed through with `pass-through attended no verified dialog mirror for grok` (`opencode`), no mirror file existed, and after away words each away wake was handled on the engine |
+| An existing mirror readable by others (Claude) | a mirror set to `0644` was `0600` after the next captain prompt and reply were appended |
+| Mirror deleted mid-conversation (Claude, after the fix above) | the next captain prompt and reply were numbered 3 and 4 past cursor 2, and the resumed engine conversation (same session id) received them in its next wake |
 
 The existing live guards for the surfaces this change touches (the tracked Claude, Codex, Grok, and Cursor hook registrations, the host, and the dispatch module the Pi watcher now shares), run on the branch on 2026-09-24, with a before-and-after pair on the base tree `e1b7f4f5` wherever the branch run failed:
 
@@ -751,14 +764,18 @@ The existing live guards for the surfaces this change touches (the tracked Claud
 Fixed on the branch from these sessions:
 
 - A finished local-only branch the captain called routine was reported routine, and a rebased branch waiting for main to land it was reported routine four times, which left main, the only actor that may land it while attended, unaware; the branch prompt now makes anything main must act on a captain outcome, even when the captain asked not to hear about it or an earlier outcome already told main.
-- Claude's Stop-hook rewakes and Grok's background-task completions were mirrored as captain text; the Claude mirror now drops its wrapper, while Grok's retained writer remains unverified for attended use.
+- Claude's Stop-hook rewakes and Grok's background-task completions were mirrored as captain text; the mirror drops Claude's wrapper, and Grok no longer has a writer.
 - Codex mid-turn captain messages never reached the mirror; Codex's hooks now read the rollout transcript.
 - Main drains on a host home paid three validated store reads; the drain now makes one.
+- A deleted and recreated mirror restarted its numbering below the engine's cursor, so a resumed conversation skipped the new dialog; new entries now continue past both the committed and the staged cursor (the re-check below).
 
 Not fixed here:
 
 - Codex's 180-second attended checkpoint returns to main at every boundary, so main still takes a turn per boundary and noticed and landed one finished worker itself between checkpoints.
-- The first captain prompt of a Grok or OpenCode session could not be mirrored, because the session acquires the fleet lock during that first turn. Grok and OpenCode are therefore not verified for the attended mirror, although their Grok `UserPromptSubmit` and `Stop` hooks and OpenCode plugin's `chat.message` and `session.idle` writer remain registered: the host keeps every attended close on main there, and their away posture is unchanged. Capturing that first prompt remains follow-up work before those writers can be verified.
+- The first captain prompt of a Grok or OpenCode session could not be mirrored, because the session acquires the fleet lock during that first turn.
+  Grok and OpenCode are therefore not verified for the attended mirror, and their writers (the Grok `UserPromptSubmit` and `Stop` registration and the OpenCode plugin's `chat.message` and `session.idle` path) were removed so no captain dialog is kept that nothing reads: the host keeps every attended close on main there, and their away posture is unchanged.
+  Capturing that first prompt remains follow-up work and would reintroduce their writers.
+- On a primary with no mirror, every away wake adds one `mirror the dialog mirror could not be read; this away wake carries none` line to the host's ledger (seen on Grok and OpenCode in the re-check below); it changes nothing the engine or main sees.
 
 Deterministic entry points:
 

@@ -80,8 +80,9 @@ Tool traffic is never mirrored; the engine reads files and records itself.
 A new engine conversation re-anchors on the current main session's newest entries, and a resumed one gets only what is new, so an earlier session's dialog never steers today's.
 A primary's mirror is verified only when its writers record the session's dialog from its first captain prompt, and only a verified primary runs the attended posture; every other primary keeps every attended close on main, and its away posture needs no mirror and is unchanged.
 omp has no verified writer yet, because no omp was available to prove one against.
-Grok and OpenCode still have mirror writers, but their session takes the fleet lock during its first turn, so those writers cannot record that turn's captain prompt; their mirrors are not verified and the host does not read them in attended mode.
-Capturing that first prompt would allow their attended writers to be verified.
+Grok and OpenCode have no writer: their session takes the fleet lock during its first turn, so that turn's captain prompt could never be recorded and the engine would judge without the captain's opening words, and no captain dialog is kept that nothing reads.
+Follow-up: capturing that first prompt on Grok and OpenCode would reintroduce their writers and let them run the attended posture.
+Follow-up: on a primary with no mirror, every away wake still tries the feed and adds one `the dialog mirror could not be read; this away wake carries none` line to the host's ledger; the line changes nothing the engine or main sees, and skipping the away feed where no verified writer exists would remove it.
 A captain message typed while an engine turn is already running reaches the engine at its next wake.
 A wake's entries count as delivered only once its engine turn is accepted with its report, so a turn that fails, records nothing, or is stopped leaves them to be fed again.
 An attended wake whose mirror is missing or cannot be read, or holds an entry that does not parse, reaches main with `the dialog mirror could not be read` before any engine turn, and the cursor stays where it was; an away wake runs without the mirror.

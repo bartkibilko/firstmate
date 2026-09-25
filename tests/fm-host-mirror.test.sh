@@ -306,6 +306,27 @@ test_feed_resumes_reanchors_and_is_bounded() {
   pass "mirror: the feed resumes from its committed cursor, re-anchors on a new conversation or session, and is bounded"
 }
 
+test_recreated_mirror_continues_past_both_cursors() {
+  local home
+  home=$(make_home recreate)
+  as_session "$home" "$SAY"'
+    for n in 1 2 3 4 5; do say captain "earlier ask $n"; done
+    "$MIRROR" feed s1 new > /dev/null && "$MIRROR" commit
+    rm "$FM_HOME/state/.host-mirror.jsonl"
+    say captain "asked after the mirror was lost"
+    "$MIRROR" feed s1 resume > "$FM_HOME/feed.recreated"
+    rm "$FM_HOME/state/.host-mirror.jsonl"
+    say captain "asked while that turn ran"
+    "$MIRROR" commit
+    "$MIRROR" feed s1 resume > "$FM_HOME/feed.after-commit"
+  ' || fail "the session failed"
+  assert_equals "[captain] asked after the mirror was lost" "$(cat "$home/feed.recreated")" \
+    "a recreated mirror must not number new dialog at or below the committed cursor"
+  assert_equals "[captain] asked while that turn ran" "$(cat "$home/feed.after-commit")" \
+    "a mirror recreated during a turn must not let that turn's commit skip new dialog"
+  pass "mirror: a recreated mirror continues past the committed and staged cursors, so a resumed conversation still gets new dialog"
+}
+
 test_verified_writers() {
   local harness
   for harness in claude codex cursor; do
@@ -325,4 +346,5 @@ test_operational_foreign_and_unowned_input_is_dropped
 test_entries_are_deduplicated_and_capped
 test_mirror_is_owner_only_under_an_open_umask
 test_feed_resumes_reanchors_and_is_bounded
+test_recreated_mirror_continues_past_both_cursors
 test_verified_writers

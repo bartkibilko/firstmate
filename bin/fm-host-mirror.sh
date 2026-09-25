@@ -70,10 +70,10 @@
 # were proven against the real harness to record a session's dialog from its
 # first captain prompt (docs/supervision-host.md "The dialog mirror"); the
 # host runs the attended posture only on those, and every other primary keeps
-# the attended behavior it has without the host. Grok and OpenCode have
-# registered writers but are not verified: their first prompt predates the
-# session's fleet lock and cannot be captured by those writers
-# (docs/supervision-host.md "The dialog mirror").
+# the attended behavior it has without the host. Grok and OpenCode have no
+# writer: their session takes the fleet lock during its first turn, so that
+# turn's captain prompt could never be recorded, and a writer returns with
+# first-prompt capture (docs/supervision-host.md "The dialog mirror").
 #
 # Usage:
 #   fm-host-mirror.sh hook <harness>        a prompt-submit or turn-end hook payload on stdin
