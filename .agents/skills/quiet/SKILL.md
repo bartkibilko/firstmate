@@ -2,7 +2,7 @@
 name: quiet
 description: >-
   Enter quiet supervision mode when the captain invokes /quiet or asks for quiet mode, quiet-while-present, or fewer routine wake turns while they stay in the session.
-  On a home whose attended supervision host runs, it enters nothing and tells the captain the attended posture already is quiet mode.
+  On Pi or a home whose attended supervision host runs, it enters nothing: the attended posture already is quiet mode.
   Elsewhere it sets the same durable away/quiet-mode flag as /afk, in `quiet` mode, so the sub-supervisor daemon self-handles routine wakes and escalates captain-relevant events exactly as away mode does, but ordinary captain chat does NOT exit it - only an explicit `/quiet off` does.
 user-invocable: true
 metadata:
@@ -11,20 +11,17 @@ metadata:
 
 # quiet
 
-Quiet supervision mode (kunchenguid/firstmate#2356): the same token-saving
-daemon tradeoff as `/afk`, made explicit for a captain who is staying,
-watching the session, and does not want to exit the mode just by chatting.
+Quiet supervision mode (kunchenguid/firstmate#2356) keeps routine wakes off a present captain's conversation.
+On homes that need a daemon, it uses the same token-saving tradeoff as `/afk` without exiting on ordinary chat.
 
-This skill is a thin wrapper.
-Every mechanism below - the daemon, its injection, its busy/composer guards,
-its classification policy, its reliability properties - is owned once by the
-`afk` skill and is IDENTICAL in quiet mode; nothing here restates it.
-The only things quiet mode changes are which mode the flag declares and what
-exits it.
+This skill is a thin wrapper for the daemon-backed path.
+Its injection, busy/composer guards, classification policy, and reliability properties are owned by the `afk` skill and are identical in daemon-backed quiet mode.
+Only the flag's mode and exit rule differ.
 
 ## What it does
 
-0. **First run `bin/fm-afk-launch.sh quiet-check`.**
+0. **On Pi or pi-signed, enter nothing: the in-process attended branch already keeps routine wakes off main (the `/afk` skill's "What it does" step 2); tell the captain it is already quiet while present.**
+   Otherwise first run `bin/fm-afk-launch.sh quiet-check`.
    It exits 0 with one line when quiet mode needs nothing on this home: where the attended supervision host runs (`docs/supervision-host.md` "Postures"), the ordinary supervision session already handles the wakes it can while the captain is present and opens no turn here for a routine outcome, so the attended posture already is quiet mode.
    Then enter nothing - no record, no daemon, no flag - and tell the captain in `AGENTS.md` section 9 language that supervision here already works that way: routine fleet events stay off this conversation, while decisions, failures, credentials, and review-ready work still reach them.
    When its line instead says the supervision session is paused after repeated engine errors, still enter nothing, and tell the captain plainly: routine wakes reach this conversation until the session recovers, and its next retry is due at the time the line names.
