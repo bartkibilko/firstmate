@@ -754,7 +754,7 @@ Fixed on the branch from these sessions:
 Not fixed here:
 
 - Codex's 180-second attended checkpoint returns to main at every boundary, so main still takes a turn per boundary and noticed and landed one finished worker itself between checkpoints.
-- The first captain prompt of a Grok or OpenCode session is not mirrored, because the session acquires the fleet lock during that first turn; main's reply to it is mirrored. The host now keeps every attended close on main until the mirror holds captain text from the session, and recording that first prompt remains follow-up work.
+- The first captain prompt of a Grok or OpenCode session is not mirrored, because the session acquires the fleet lock during that first turn; main's reply to it is mirrored. Grok and OpenCode are therefore no longer verified for the attended mirror: the host keeps every attended close on main there, their away posture is unchanged, and recording that first prompt remains follow-up work.
 
 Deterministic entry points:
 

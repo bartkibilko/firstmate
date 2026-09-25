@@ -149,9 +149,6 @@ make_home() {  # <name> <attended|away> [config line]
   make_fake_crew_state "$home/fakebin" >/dev/null
   printf '%s\n' "${3:-}" > "$home/config/supervision-host"
   [ -n "${3:-}" ] || : > "$home/config/supervision-host"
-  # The captain has spoken in this session, so the mirror can vouch for it.
-  [ "$2" != attended ] \
-    || printf '{"hook_event_name":"UserPromptSubmit","prompt_id":"p0","prompt":"watch the fleet for me"}' > "$home/mirror-seed.0"
   printf 'project=demo\nwindow=fm-demo\nharness=claude\n' > "$home/state/demo.meta"
   echo handle > "$home/stub-mode"
   if [ "$2" = away ]; then
@@ -441,6 +438,23 @@ test_branch_outcomes_left_out_by_the_cap_follow_on_the_next_drain() {
   pass "drain: branch outcomes the byte cap leaves out stay unread and follow on the next drain"
 }
 
+# A drain that cannot print the section, because its output is already
+# closed, has presented nothing, so the rows stay unread for the next drain.
+test_branch_outcomes_stay_unread_when_the_drain_cannot_print() {
+  local home drained
+  home="$TMP_ROOT/drain-closed"
+  mkdir -p "$home/state" "$home/config"
+  : > "$home/config/supervision-host"
+  FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" append --task demo --verdict routine --summary 'merged the docs fix' >/dev/null \
+    || fail "fixture: could not record the routine outcome"
+  FM_HOME="$home" "$FAKE_CLAUDE" -c '"$0" >&- 2>/dev/null' "$ROOT/bin/fm-wake-drain.sh" || true
+  drained=$(FM_HOME="$home" "$FAKE_CLAUDE" -c '"$0" 2>&1' "$ROOT/bin/fm-wake-drain.sh")
+  assert_contains "$drained" "[seq 1] demo: merged the docs fix" "a routine outcome a drain could not print must follow on the next drain"
+  drained=$(FM_HOME="$home" "$FAKE_CLAUDE" -c '"$0" 2>&1' "$ROOT/bin/fm-wake-drain.sh")
+  assert_not_contains "$drained" "merged the docs fix" "a routine outcome a drain printed must not repeat"
+  pass "drain: branch outcomes stay unread when the drain cannot print them"
+}
+
 test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main() {
   local home first drained
   home=$(make_home attended-routine attended)
@@ -452,7 +466,7 @@ test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main() {
   first="$home/engine-call.1"
   assert_re '^actor=branch$' "$first" "the attended engine must run as the branch actor"
   assert_no_re '^POSTURE: AWAY' "$first" "an attended wake must carry no away tail"
-  assert_re '^(arg=)?FIRSTMATE SUPERVISION WAKE: signal: ' "$first" "the attended wake must carry the close"
+  assert_re '^arg=FIRSTMATE SUPERVISION WAKE: signal: ' "$first" "the attended wake must carry the close"
   assert_re '	handled	turn=[^	]*	posture=attended	' "$home/state/.supervision-host.log" "the ledger must record the attended turn"
   assert_grep '"verdict":"routine"' "$home/state/branch-outcomes.jsonl" "the engine's routine report did not reach the store"
   assert_no_grep 'demo.status' "$home/state/.wake-queue" "the engine's acknowledgement did not consume the wake"
@@ -537,19 +551,36 @@ test_attended_main_only_close_passes_straight_to_main() {
   pass "host: an attended decision close stays main's exactly as the plain arm delivers it"
 }
 
-test_attended_primary_without_a_verified_mirror_passes_through() {
-  local home
-  home=$(make_home attended-omp attended claude)
-  FM_SUPERVISION_HOST_PRIMARY=omp start_host "$home"
-  wait_until 150 watcher_live "$home" || fail "omp: the host never started a watcher cycle"
-  append_status "$home" 'fixture finished' 'done'
-  wait_until 200 host_exited "$home" || fail "omp: the host did not hand the close to main"
-  assert_re '^signal: .*demo.status' "$home/host.out" "the close must carry the watcher's reason line"
-  assert_no_re '^supervision-host' "$home/host.out" "the close must reach main exactly as the arm printed it"
-  [ "$(engine_calls "$home")" -eq 0 ] || fail "omp: the engine ran without a verified dialog mirror"
-  assert_re '	pass-through	attended	no verified dialog mirror for omp	' "$home/state/.supervision-host.log" \
-    "the ledger must record that no verified mirror kept the close on main"
-  pass "host: a primary with no verified dialog mirror keeps every attended close on main"
+# Grok and OpenCode cannot mirror a session's first captain prompt and omp has
+# no proven writer, so none of them has a verified dialog mirror: every attended
+# close reaches main as without the host, while the away posture, which needs
+# no mirror, still runs on the engine.
+test_primary_without_a_verified_mirror_runs_away_only() {
+  local home harness
+  for harness in grok opencode omp; do
+    home=$(make_home "attended-$harness" attended claude)
+    FM_SUPERVISION_HOST_PRIMARY=$harness start_host "$home"
+    wait_until 150 watcher_live "$home" || fail "$harness: the host never started a watcher cycle"
+    append_status "$home" 'fixture finished' 'done'
+    wait_until 200 host_exited "$home" || fail "$harness: the host did not hand the attended close to main"
+    assert_re '^signal: .*demo.status' "$home/host.out" "the close must carry the watcher's reason line"
+    assert_no_re '^supervision-host' "$home/host.out" "the close must reach main exactly as the arm printed it"
+    [ "$(engine_calls "$home")" -eq 0 ] || fail "$harness: the engine ran an attended wake without a verified dialog mirror"
+    assert_re "	pass-through	attended	no verified dialog mirror for $harness	" "$home/state/.supervision-host.log" \
+      "the ledger must record that no verified mirror kept the close on main"
+  done
+  home=$(make_home away-grok away claude)
+  FM_SUPERVISION_HOST_PRIMARY=grok start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "away grok: the host never started a watcher cycle"
+  append_status "$home" 'step one'
+  wait_until 250 handled_at_least "$home" 1 \
+    || fail "away grok: the wake was not handled on the engine: $(cat "$home/host.out"; cat "$home/state/.supervision-host.log")"
+  assert_re '^primary=grok$' "$home/engine-call.1" "the away engine must carry the grok primary pin"
+  assert_re '^POSTURE: AWAY\.' "$home/engine-call.1" "the away wake must carry the away tail"
+  [ ! -s "$home/host.rc" ] || fail "a handled away wake on grok reached main: $(cat "$home/host.out")"
+  kill -TERM "$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")"
+  wait_until 200 host_exited "$home" || fail "away grok: the host did not stop on TERM"
+  pass "host: a primary with no verified dialog mirror keeps every attended close on main, and its away posture still runs"
 }
 
 test_attended_wake_carries_the_dialog_mirror() {
@@ -663,32 +694,6 @@ SH
   fourth="$home/engine-call.6"
   assert_re '^\[captain\] fourth ask, turn unreported$' "$fourth" "dialog of a turn that recorded no report must reach the next turn"
   pass "host: dialog a turn never completed with its report (a park boundary, a stopped turn, no report) reaches the next turn"
-}
-
-# Until the mirror holds captain text from this main session, the engine has
-# not heard the captain, so every attended close stays main's.
-test_attended_close_stays_main_until_the_mirror_holds_captain_text() {
-  local home
-  home=$(make_home attended-unheard attended)
-  rm -f "$home/mirror-seed.0"
-  printf '{"hook_event_name":"Stop","prompt_id":"p1","last_assistant_message":"Main replied to an unmirrored first prompt."}' > "$home/mirror-seed.1"
-  start_session "$home"
-  park_again "$home"
-  append_status "$home" 'before the captain is heard'
-  wait_until 200 host_exited "$home" || fail "unheard: the close did not reach main"
-  assert_re '^signal: .*demo.status' "$home/host.out" "the close must carry the watcher's reason line"
-  assert_no_re '^supervision-host' "$home/host.out" "the close must reach main exactly as the arm printed it"
-  [ "$(engine_calls "$home")" -eq 0 ] || fail "unheard: the engine ran before the mirror held the captain's words"
-  assert_re '	pass-through	attended	the dialog mirror holds no captain text from this main session yet	' \
-    "$home/state/.supervision-host.log" "the ledger must record why the close stayed on main"
-  main_drain_and_ack "$home"
-
-  printf '{"hook_event_name":"UserPromptSubmit","prompt_id":"p2","prompt":"keep the export worker on low effort"}' > "$home/mirror-seed.2"
-  park_again "$home"
-  append_status "$home" 'after the captain is heard'
-  wait_until 250 handled_at_least "$home" 1 || fail "unheard: the close was not handled once the captain was heard: $(cat "$home/host.out"; cat "$home/state/.supervision-host.log")"
-  assert_re '^\[captain\] keep the export worker on low effort$' "$home/engine-call.1" "the first engine wake must carry the captain's words"
-  pass "host: every attended close stays main's until the mirror holds this session's captain text"
 }
 
 test_latch_trips_after_two_engine_errors_then_probes_and_recovers() {
@@ -901,7 +906,7 @@ test_outcome_after_the_return_survives_a_host_killed_at_the_turn_end() {
   start_host "$home"
   wait_until 250 host_exited "$home" || fail "return-first: the next host did not resurface the queued outcome"
   assert_re '^check: rearm-resurface$' "$home/host.out" "the next host's first cycle must resurface the queue"
-  assert_re '	pass-through	attended	[^	]+	check: rearm-resurface' "$home/state/.supervision-host.log" "the attended resurface must reach main"
+  assert_re '	pass-through	attended	main-only	check: rearm-resurface' "$home/state/.supervision-host.log" "the attended resurface must reach main"
   drained=$(FM_HOME="$home" "$ROOT/bin/fm-wake-drain.sh" 2>&1)
   assert_contains "$drained" "supervision-host outcome 1 for demo [routine] was recorded after the captain returned" \
     "main's drain must present the outcome the killed host never handed off"
@@ -1286,14 +1291,14 @@ test_report_after_the_return_is_queued_for_main
 test_dispatch_entry_scopes_rows_and_renders_the_away_tail
 test_branch_outcomes_only_on_an_opted_in_home_off_pi
 test_branch_outcomes_left_out_by_the_cap_follow_on_the_next_drain
+test_branch_outcomes_stay_unread_when_the_drain_cannot_print
 test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main
 test_attended_captain_outcome_reaches_main_through_branch_outcomes
 test_captain_leaving_mid_turn_keeps_its_captain_outcome_for_the_return
 test_attended_main_only_close_passes_straight_to_main
-test_attended_primary_without_a_verified_mirror_passes_through
+test_primary_without_a_verified_mirror_runs_away_only
 test_attended_wake_carries_the_dialog_mirror
 test_undelivered_dialog_is_fed_again_on_the_next_turn
-test_attended_close_stays_main_until_the_mirror_holds_captain_text
 test_latch_trips_after_two_engine_errors_then_probes_and_recovers
 test_latch_hands_away_wakes_back_with_a_line
 test_away_wake_is_handled_on_the_engine_and_never_reaches_main

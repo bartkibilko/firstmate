@@ -5,12 +5,12 @@ Supervision host: on for this home (`config/supervision-host`; [`supervision-hos
 {omp} The omp watch extension runs the supervision host in the arm's place, and everything above still holds with these additions:
 {grok} Your tracked background arm above runs the supervision host (`bin/fm-supervision-host.sh park`) in the plain arm's place, and everything above still holds with these additions:
 {codex} Every foreground checkpoint runs the supervision host in the watcher's place, and everything above still holds with these additions:
-{claude,cursor,opencode,grok,codex} 1. Attended (no away-posture record `state/.afk-contract`): a headless supervision session takes the wakes the supervision branch may take and never wakes you for a routine outcome, so fewer wakes reach you; check wakes, decision wakes, and whatever it cannot take still reach you exactly as above.
-{omp} 1. Attended (no away-posture record `state/.afk-contract`): every wake reaches you exactly as above, because no verified dialog mirror feeds a supervision session from this harness yet.
-{claude,cursor,opencode,grok,codex}    `supervision-host: branch-outcome: ...` means it handled a wake and recorded outcomes for you: run `bin/fm-wake-drain.sh`, process each entry of its `BRANCH OUTCOMES` section as firstmate (tell the captain, answer or escalate a decision, act on a blocker, or note that nothing more is needed), then run the `mark-processed` acknowledgement it prints; every drain presents them again until you do.
-{claude,cursor,opencode,grok,codex}    `supervision-host: the supervision session could not take this wake ...` means the wake is yours: handle it as above.
-{claude,cursor,opencode,grok,codex}    A `supervision-host:` line saying the supervision session paused after repeated engine errors, or recovered, is a health note: tell the captain when it matters, and handle any wake it came with as usual.
-{claude,cursor,opencode,grok,codex}    Routine outcomes never wake you; your next drain lists each once under `BRANCH OUTCOMES, ROUTINE` for awareness, with nothing to acknowledge, and `bin/fm-branch-outcome.sh list` keeps them all.
+{claude,cursor,codex} 1. Attended (no away-posture record `state/.afk-contract`): a headless supervision session takes the wakes the supervision branch may take and never wakes you for a routine outcome, so fewer wakes reach you; check wakes, decision wakes, and whatever it cannot take still reach you exactly as above.
+{opencode,omp,grok} 1. Attended (no away-posture record `state/.afk-contract`): every wake reaches you exactly as above, because no verified dialog mirror feeds a supervision session from this harness yet.
+{claude,cursor,codex}    `supervision-host: branch-outcome: ...` means it handled a wake and recorded outcomes for you: run `bin/fm-wake-drain.sh`, process each entry of its `BRANCH OUTCOMES` section as firstmate (tell the captain, answer or escalate a decision, act on a blocker, or note that nothing more is needed), then run the `mark-processed` acknowledgement it prints; every drain presents them again until you do.
+{claude,cursor,codex}    `supervision-host: the supervision session could not take this wake ...` means the wake is yours: handle it as above.
+{claude,cursor,codex}    A `supervision-host:` line saying the supervision session paused after repeated engine errors, or recovered, is a health note: tell the captain when it matters, and handle any wake it came with as usual.
+{claude,cursor,codex}    Routine outcomes never wake you; your next drain lists each once under `BRANCH OUTCOMES, ROUTINE` for awareness, with nothing to acknowledge, and `bin/fm-branch-outcome.sh list` keeps them all.
 {codex}    A checkpoint that carries an engine turn can run past its bound by up to one turn.
 2. Away (the record exists and no daemon runs): the host hands each wake to a headless away session that runs the supervision branch's contract under the record, and you are parked.
 {claude}    Only a wake the host hands back reaches you, as `Stop hook feedback` carrying the close plus one `supervision-host: <why>` line.
@@ -29,6 +29,6 @@ Supervision host: on for this home (`config/supervision-host`; [`supervision-hos
 5. Captain outcomes the away session records wait in the outcome store for the return brief (`bin/fm-afk-return.sh`); the drain's `BRANCH OUTCOMES` section presents them only after the return.
 {claude,grok} 6. `/afk` writes only the record here (`bin/fm-afk-launch.sh start-native` refuses the away daemon on this home).
 {cursor,opencode,omp,codex} 6. `/afk` writes only the record here (`bin/fm-afk-launch.sh start` refuses the away daemon on this home).
-{claude,cursor,opencode,grok,codex}    `/quiet` needs nothing here: the attended supervision session already is quiet mode (the quiet skill's `quiet-check` says so), and a quiet daemon from an earlier entry keeps owning supervision until `/quiet off`.
-{omp}    `/quiet` still launches the daemon, which then owns supervision as above.
+{claude,cursor,codex}    `/quiet` needs nothing here: the attended supervision session already is quiet mode (the quiet skill's `quiet-check` says so), and a quiet daemon from an earlier entry keeps owning supervision until `/quiet off`.
+{opencode,omp,grok}    `/quiet` still launches the daemon, which then owns supervision as above.
 {grok} 7. The pre-tool seatbelt does not classify the host command, so keep it exactly the one background call above: never shell `&`, a pipe, or another command bundled onto it.

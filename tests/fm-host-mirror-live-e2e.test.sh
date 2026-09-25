@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Live guard for the supervision host's dialog-mirror writers
 # (bin/fm-host-mirror.sh, docs/supervision-host.md "The dialog mirror"): each
-# INSTALLED primary harness with a verified writer runs one real prompt in a
+# INSTALLED primary harness with a mirror writer runs one real prompt in a
 # fixture primary checkout that carries this repo's tracked mirror
 # registrations, and the mirror must record the captain's prompt and main's
 # reply. The writers read vendor hook payloads, so only the real harness can
-# prove them. Opt-in because it submits prompts:
+# prove them. Grok and OpenCode writers are proven here too, but they are not
+# verified for the attended posture, because their session's first captain
+# prompt is never recorded. Opt-in because it submits prompts:
 #
 #   FM_HOST_MIRROR_LIVE_E2E=1 tests/fm-host-mirror-live-e2e.test.sh
 #
@@ -217,7 +219,10 @@ for harness in $HARNESSES; do
     ABSENT="$ABSENT $harness"
     continue
   fi
-  "$ROOT/bin/fm-host-mirror.sh" verified "$harness" || fail "$harness is not in the verified-writer list this guard proves"
+  case "$harness" in
+    grok|opencode) ! "$ROOT/bin/fm-host-mirror.sh" verified "$harness" || fail "$harness must not claim a verified mirror while its first captain prompt goes unrecorded" ;;
+    *) "$ROOT/bin/fm-host-mirror.sh" verified "$harness" || fail "$harness is not in the verified-writer list this guard proves" ;;
+  esac
   case "$harness" in
     claude) run_claude ;;
     codex) run_codex ;;

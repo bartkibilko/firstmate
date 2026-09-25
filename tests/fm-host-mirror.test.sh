@@ -267,39 +267,15 @@ test_feed_resumes_reanchors_and_is_bounded() {
   pass "mirror: the feed resumes from its committed cursor, re-anchors on a new conversation or session, and is bounded"
 }
 
-test_captured_needs_this_sessions_captain_text() {
-  local home rc
-  home=$(make_home captured)
-  as_session "$home" '
-    add() { printf "%s" "$2" | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" append "$1"; }
-    ! "$MIRROR" captured || exit 11
-    add main "an answer with no ask"
-    ! "$MIRROR" captured || exit 12
-    add captain "keep the export worker on low effort"
-    "$MIRROR" captured || exit 13
-  '
-  rc=$?
-  case "$rc" in
-    0) ;;
-    11) fail "an empty mirror must not vouch for the captain's words" ;;
-    12) fail "main text alone must not vouch for the captain's words" ;;
-    13) fail "a mirrored captain prompt from this session must be vouched for" ;;
-    *) fail "the first session failed (exit $rc)" ;;
-  esac
-  as_session "$home" '! "$MIRROR" captured' \
-    || fail "an earlier main session's captain text must not vouch for a new session"
-  pass "mirror: captured holds only once the current main session's captain text is mirrored"
-}
-
 test_verified_writers() {
   local harness
-  for harness in claude codex cursor grok opencode; do
+  for harness in claude codex cursor; do
     "$MIRROR" verified "$harness" || fail "$harness must have a verified dialog mirror"
   done
-  for harness in omp kimi pi unknown; do
+  for harness in grok opencode omp kimi pi unknown; do
     ! "$MIRROR" verified "$harness" || fail "$harness must not claim a verified dialog mirror"
   done
-  pass "mirror: exactly the primaries with a proven writer report a verified mirror"
+  pass "mirror: exactly the primaries whose writers record a session from its first captain prompt report a verified mirror"
 }
 
 test_every_harness_registration_writes_the_mirror
@@ -309,5 +285,4 @@ test_home_without_the_flag_is_untouched
 test_operational_foreign_and_unowned_input_is_dropped
 test_entries_are_deduplicated_and_capped
 test_feed_resumes_reanchors_and_is_bounded
-test_captured_needs_this_sessions_captain_text
 test_verified_writers

@@ -877,13 +877,18 @@ unit_supervision_host_other_harnesses_run_no_away_daemon() {
   done
   daemon_allowed kimi >/dev/null || fail "kimi has no arm owner to run the host, so it must keep the away daemon"
   printf 'claude\n' > "$st/config/supervision-host"
-  for harness in cursor opencode grok codex; do
+  for harness in cursor codex; do
     out=$(daemon_allowed "$harness" quiet); rc=$?
     [ "$rc" -ne 0 ] || fail "$harness: quiet mode must launch no daemon where the attended host runs"
     printf '%s' "$out" | grep -F "quiet mode launches no daemon on this $harness home" >/dev/null \
       || fail "$harness: the quiet refusal must say the attended host already is quiet: $out"
   done
-  daemon_allowed omp quiet >/dev/null || fail "omp has no verified dialog mirror, so quiet mode must keep the daemon"
+  for harness in omp grok opencode; do
+    daemon_allowed "$harness" quiet >/dev/null || fail "$harness has no verified dialog mirror, so quiet mode must keep the daemon"
+    ! FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_TEST_HARNESS="$harness" \
+      bash -c '. "$1"; fm_afk_launch_primary_harness() { printf "%s" "$FM_TEST_HARNESS"; }; fm_afk_launch_main quiet-check' _ "$LAUNCH" >/dev/null 2>&1 \
+      || fail "$harness: quiet-check must not claim the attended host runs without a verified dialog mirror"
+  done
   rm -f "$st/state/.afk-contract"
   out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_TEST_HARNESS=cursor FM_AFK_MODE=quiet \
     bash -c '. "$1"; fm_afk_launch_primary_harness() { printf "%s" "$FM_TEST_HARNESS"; }; fm_afk_launch_main enter --words "stay quiet"' _ "$LAUNCH" 2>&1)

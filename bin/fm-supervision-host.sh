@@ -39,9 +39,8 @@
 #   - attended (no record): the close reaches main exactly as the arm printed
 #     it, as without the host, unless the supervision session may take it: the
 #     home names a usable engine, this primary has a verified dialog mirror
-#     (bin/fm-host-mirror.sh verified) that already holds captain text from
-#     this main session (bin/fm-host-mirror.sh captured), the session is not
-#     cooling down after engine errors, and the Pi branch's offer rule
+#     (bin/fm-host-mirror.sh verified), the session is not cooling down after
+#     engine errors, and the Pi branch's offer rule
 #     (bin/fm-branch-dispatch.mjs offer) says the branch may take this close,
 #     so main-only classes (check triggers, decision-owned triggers, a scan
 #     that is unsafe or holds nothing for the branch) stay main's;
@@ -879,8 +878,6 @@ attended_acceptor() {  # <first-reason-line>
     ATTENDED_WHY="node is missing"
   elif ! "$SCRIPT_DIR/fm-host-mirror.sh" verified "$PRIMARY"; then
     ATTENDED_WHY="no verified dialog mirror for $PRIMARY"
-  elif ! "$SCRIPT_DIR/fm-host-mirror.sh" captured; then
-    ATTENDED_WHY="the dialog mirror holds no captain text from this main session yet"
   elif health_cooling; then
     ATTENDED_WHY="the supervision session is cooling down after engine errors"
   elif ! offer=$(printf '%s\n' "$1" | node "$SCRIPT_DIR/fm-branch-dispatch.mjs" offer 2>/dev/null); then

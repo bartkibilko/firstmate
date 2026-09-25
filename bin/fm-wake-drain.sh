@@ -560,9 +560,11 @@ EOF
 # unprocessed captain outcome is listed with the exact
 # bin/fm-branch-outcome.sh mark-processed acknowledgement, on every drain until
 # main acknowledges it. Both lists run oldest first, and a row the byte cap
-# leaves out follows on the next drain: the presentation advances the store's
-# read cursor only through the rows before the first routine row it left out,
-# and lists only the captain rows that cursor covers. That cursor is what lets
+# leaves out follows on the next drain: once the section is printed, the
+# presentation advances the store's read cursor only through the rows before
+# the first routine row it left out, and lists only the captain rows that
+# cursor covers, so a drain stopped before it prints leaves every row unread.
+# That cursor is what lets
 # mark-processed accept main's acknowledgement and keeps a routine row from
 # repeating. An unprocessed
 # captain row is always presented, never adopted as processed, so a home that
@@ -574,7 +576,7 @@ EOF
 # Bounded like OPEN DECISIONS, silent when nothing is new or unprocessed, and
 # never fails the drain.
 print_branch_outcomes_section() {
-  local config rows routine captain line seq max=0 through
+  local config rows routine captain line seq max=0 through text
   local output='' used=0 shown=0 omitted=0 bytes item_bytes=600 global_bytes=4000
   [ "$ACTOR" = main ] || return 0
   config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
@@ -610,18 +612,15 @@ print_branch_outcomes_section() {
   done <<ROWS
 $routine
 ROWS
-  if ! "$SCRIPT_DIR/fm-branch-outcome.sh" mark-read --through "$through" >/dev/null 2>&1; then
-    printf 'BRANCH OUTCOMES SKIPPED: the outcome store could not be read safely; repair it before relying on this section.\n'
-    return 0
+  text=
+  if [ -n "$output" ]; then
+    text="BRANCH OUTCOMES, ROUTINE (handled by the supervision session since your last drain; for your awareness, nothing to acknowledge):
+$output"
   fi
+  [ "$omitted" -eq 0 ] || text="${text}BRANCH OUTCOMES: the outcomes after seq $through are omitted (byte cap); they follow on the next drain
+"
   captain=$(printf '%s\n' "$rows" | jq -r --argjson through "$through" 'select(.verdict == "captain" and .seq <= $through)
     | "\(.seq)\t[seq \(.seq)] \(.task): \(.summary | gsub("[\t\n\r]"; " "))"' 2>/dev/null)
-  if [ -n "$output" ]; then
-    printf 'BRANCH OUTCOMES, ROUTINE (handled by the supervision session since your last drain; for your awareness, nothing to acknowledge):\n'
-    printf '%s' "$output"
-  fi
-  [ "$omitted" -eq 0 ] || printf 'BRANCH OUTCOMES: the outcomes after seq %s are omitted (byte cap); they follow on the next drain\n' "$through"
-  [ -n "$captain" ] || return 0
   output=''
   used=0
   omitted=0
@@ -642,13 +641,20 @@ ROWS
   done <<ROWS
 $captain
 ROWS
-  [ "$shown" -gt 0 ] || return 0
-  printf 'BRANCH OUTCOMES (captain outcomes the supervision session recorded for you, oldest first - process each as firstmate: tell the captain, land or merge what is ready, answer or escalate a decision, or act on a blocker):\n'
-  printf '%s' "$output"
-  if [ "$omitted" -gt 0 ]; then
-    printf 'BRANCH OUTCOMES: %d newer omitted (byte cap); they follow on the next drain\n' "$omitted"
+  if [ "$shown" -gt 0 ]; then
+    text="${text}BRANCH OUTCOMES (captain outcomes the supervision session recorded for you, oldest first - process each as firstmate: tell the captain, land or merge what is ready, answer or escalate a decision, or act on a blocker):
+$output"
+    [ "$omitted" -eq 0 ] || text="${text}BRANCH OUTCOMES: $omitted newer omitted (byte cap); they follow on the next drain
+"
+    text="${text}BRANCH OUTCOMES: after processing them run bin/fm-branch-outcome.sh mark-processed --through $max; until then every drain presents them again
+"
   fi
-  printf 'BRANCH OUTCOMES: after processing them run bin/fm-branch-outcome.sh mark-processed --through %s; until then every drain presents them again\n' "$max"
+  if [ -n "$text" ]; then
+    printf '%s' "$text" || return 0
+  fi
+  if ! "$SCRIPT_DIR/fm-branch-outcome.sh" mark-read --through "$through" >/dev/null 2>&1; then
+    printf 'BRANCH OUTCOMES: the store could not record this presentation, so these outcomes are presented again on the next drain and an acknowledgement above is refused until then.\n'
+  fi
 }
 
 print_status_sections() {

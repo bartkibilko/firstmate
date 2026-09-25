@@ -99,8 +99,8 @@ Both choices are local to each Firstmate home and are not part of secondmate inh
 ## Supervision host (config/supervision-host)
 
 The optional local, gitignored `config/supervision-host` opts this home into the supervision host, which runs the supervision branch's contract on a headless engine session beside a non-Pi primary; [docs/supervision-host.md](supervision-host.md) owns the design, its current scope, and the verified engines.
-Today a Claude, Cursor, OpenCode, omp, Grok, or Codex primary runs it: with the file present, that primary's arm owner runs the host in the watcher arm's place, and the host handles on the engine the attended wakes the Pi branch would take (on a primary with a verified dialog mirror, which omp does not have yet) and every wake while the away-posture record `state/.afk-contract` exists.
-`/afk` launches no away daemon on that home, and `/quiet` needs nothing where the attended host runs, while an omp home's `/quiet` still launches the daemon.
+Today a Claude, Cursor, OpenCode, omp, Grok, or Codex primary runs it: with the file present, that primary's arm owner runs the host in the watcher arm's place, and the host handles on the engine the attended wakes the Pi branch would take (on a primary with a verified dialog mirror: Claude, Cursor, and Codex; omp, Grok, and OpenCode do not have one yet) and every wake while the away-posture record `state/.afk-contract` exists.
+`/afk` launches no away daemon on that home, and `/quiet` needs nothing where the attended host runs, while an omp, Grok, or OpenCode home's `/quiet` still launches the daemon.
 The same file turns on the primary's dialog-mirror hooks (`bin/fm-host-mirror.sh`), which write nothing on a home without it.
 Absence leaves the home exactly as it is without the host, on every harness; a Pi primary keeps its in-process supervision branch whether or not the file exists.
 A Grok primary reads the file when its session-start block renders, so a change takes effect at its next session start; every other owner reads it at every arm.
