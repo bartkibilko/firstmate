@@ -123,6 +123,7 @@ fi
 # shellcheck source=bin/fm-supervision-engine-lib.sh
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
 
+umask 077
 MIRROR="$STATE/.host-mirror.jsonl"
 CURSOR="$STATE/.host-mirror-cursor"
 STAGED="$CURSOR.next"
@@ -170,6 +171,7 @@ append_entry() {  # <captain|main> <text> [<id>]
         else .[0:($cap / 2 | ceil)] + "\n[mirror truncated: \(length - $cap) characters omitted]\n" + .[length - ($cap / 2 | floor):]
         end;
       {seq: $seq, epoch: $epoch, key: $key, id: $id, tag: $tag, text: ($text | capped)}' >> "$MIRROR" 2>/dev/null
+  chmod 600 "$MIRROR" 2>/dev/null
   if [ "$(wc -l < "$MIRROR" 2>/dev/null | tr -d ' ')" -gt $((MIRROR_KEEP + 100)) ] 2>/dev/null; then
     tmp=$(mktemp "$MIRROR.tmp.XXXXXX" 2>/dev/null) \
       && tail -n "$MIRROR_KEEP" "$MIRROR" > "$tmp" 2>/dev/null && mv -f "$tmp" "$MIRROR" 2>/dev/null

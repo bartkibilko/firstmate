@@ -610,6 +610,44 @@ test_attended_wake_carries_the_dialog_mirror() {
   pass "host: each wake carries the captain's dialog since the last wake, without operational input"
 }
 
+mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+
+# Every file carrying the captain's dialog is owner-only, even under an open
+# umask and when a readable copy was already there. The feed is removed before
+# the engine starts, so a node wrapper records its mode as the wake renders.
+test_dialog_bearing_files_are_owner_only() {
+  local home old
+  home=$(make_home attended-private attended)
+  {
+    printf '#!/usr/bin/env bash\nREAL_NODE=%q\n' "$(command -v node)"
+    cat <<'SH'
+prev=
+for a in "$@"; do
+  [ "$prev" != --mirror-file ] || { stat -c %a "$a" 2>/dev/null || stat -f %Lp "$a"; } >> "$FM_HOME/feed-modes"
+  prev=$a
+done
+exec "$REAL_NODE" "$@"
+SH
+  } > "$home/fakebin/node"
+  chmod +x "$home/fakebin/node"
+  old=$(umask)
+  umask 022
+  for f in .host-mirror.jsonl .supervision-host-mirror .supervision-host-wake; do
+    : > "$home/state/$f"
+    chmod 644 "$home/state/$f"
+  done
+  start_host "$home"
+  umask "$old"
+  wait_until 150 watcher_live "$home" || fail "private: the host never started a watcher cycle"
+  append_status "$home" 'step one'
+  wait_until 250 handled_at_least "$home" 1 || fail "private: the wake was not handled: $(cat "$home/state/.supervision-host.log")"
+  assert_re '^\[captain\] watch the fleet for me$' "$home/engine-call.1" "fixture: the wake must carry the captain's words"
+  [ "$(mode_of "$home/state/.host-mirror.jsonl")" = 600 ] || fail "the dialog mirror must be owner-only, got $(mode_of "$home/state/.host-mirror.jsonl")"
+  [ "$(mode_of "$home/state/.supervision-host-wake")" = 600 ] || fail "the wake file must be owner-only, got $(mode_of "$home/state/.supervision-host-wake")"
+  [ "$(cat "$home/feed-modes" 2>/dev/null)" = 600 ] || fail "the mirror feed must be owner-only, got $(cat "$home/feed-modes" 2>/dev/null)"
+  pass "host: the dialog mirror, its feed, and the wake file are owner-only"
+}
+
 # Park again after a host was stopped mid-park: the new cycle's first close is
 # the watcher's downtime resurface, which main drains before the next park.
 park_after_stop() {  # <home>
@@ -1354,6 +1392,7 @@ test_captain_leaving_mid_turn_keeps_its_captain_outcome_for_the_return
 test_attended_main_only_close_passes_straight_to_main
 test_primary_without_a_verified_mirror_runs_away_only
 test_attended_wake_carries_the_dialog_mirror
+test_dialog_bearing_files_are_owner_only
 test_undelivered_dialog_is_fed_again_on_the_next_turn
 test_attended_wake_with_an_unreadable_mirror_reaches_main
 test_latch_trips_after_two_engine_errors_then_probes_and_recovers

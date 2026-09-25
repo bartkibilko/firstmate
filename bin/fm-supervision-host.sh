@@ -773,7 +773,8 @@ handle_wake() {  # <reason-lines>
   # Attended, the engine never judges without the captain's words, so a feed
   # that cannot be read hands the wake to main; away needs none.
   mirror=$MIRROR_FEED
-  if ! "$SCRIPT_DIR/fm-host-mirror.sh" feed "$ENGINE_SESSION" "$ENGINE_MODE" > "$mirror" 2>/dev/null; then
+  rm -f "$mirror"
+  if ! (umask 077; exec "$SCRIPT_DIR/fm-host-mirror.sh" feed "$ENGINE_SESSION" "$ENGINE_MODE" > "$mirror" 2>/dev/null); then
     if [ "$TURN_POSTURE" = attended ]; then
       [ -z "$readback" ] || rm -f "$readback"
       rm -f "$TURN_FILE" "$mirror"
@@ -786,8 +787,9 @@ handle_wake() {  # <reason-lines>
   fi
   set -- --report "the bin/fm-branch-report.sh command" --mirror-file "$mirror"
   [ "$TURN_POSTURE" != away ] || set -- "$@" --away ${readback:+--readback-file "$readback"}
+  rm -f "$WAKE_FILE"
   if ! printf '%s\n' "$reason" \
-    | node "$SCRIPT_DIR/fm-branch-dispatch.mjs" wake-prompt "$@" > "$WAKE_FILE" 2>/dev/null; then
+    | (umask 077; exec node "$SCRIPT_DIR/fm-branch-dispatch.mjs" wake-prompt "$@" > "$WAKE_FILE" 2>/dev/null); then
     [ -z "$readback" ] || rm -f "$readback"
     rm -f "$TURN_FILE" "$mirror"
     "$SCRIPT_DIR/fm-wake-grant.sh" release "$GEN" >/dev/null 2>&1 || true

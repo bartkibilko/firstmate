@@ -62,6 +62,8 @@ SAY='say() {  # <captain|main> <text> [<id>]
 }
 '
 
+mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+
 entries() {  # <home> -> "<tag>|<text>" per entry
   jq -r '"\(.tag)|\(.text)"' "$1/state/.host-mirror.jsonl" 2>/dev/null
 }
@@ -228,6 +230,19 @@ test_entries_are_deduplicated_and_capped() {
   pass "mirror: a repeated entry is recorded once, and a long entry keeps its head and tail"
 }
 
+test_mirror_is_owner_only_under_an_open_umask() {
+  local home mirror
+  home=$(make_home private)
+  mirror="$home/state/.host-mirror.jsonl"
+  (umask 022; as_session "$home" "$SAY"'say captain "keep this between us" p1') || fail "a writer failed"
+  [ "$(mode_of "$mirror")" = 600 ] || fail "a new mirror must be owner-only, got $(mode_of "$mirror")"
+  chmod 644 "$mirror"
+  (umask 022; as_session "$home" "$SAY"'say main "understood" p1') || fail "a writer failed"
+  [ "$(mode_of "$mirror")" = 600 ] || fail "an existing readable mirror must be made owner-only, got $(mode_of "$mirror")"
+  [ "$(entries "$home" | wc -l | tr -d ' ')" -eq 2 ] || fail "both entries must be recorded: $(entries "$home")"
+  pass "mirror: the captain's dialog is owner-only, even when the file already existed readable by others"
+}
+
 test_feed_resumes_reanchors_and_is_bounded() {
   local home out
   home=$(make_home feed)
@@ -282,5 +297,6 @@ test_writers_are_inert_without_the_opt_in
 test_home_without_the_flag_is_untouched
 test_operational_foreign_and_unowned_input_is_dropped
 test_entries_are_deduplicated_and_capped
+test_mirror_is_owner_only_under_an_open_umask
 test_feed_resumes_reanchors_and_is_bounded
 test_verified_writers
