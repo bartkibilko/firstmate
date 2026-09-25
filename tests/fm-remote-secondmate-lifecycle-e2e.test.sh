@@ -1358,17 +1358,21 @@ printf 'confirmed:%s\n' "$retired_wake_corr" > "$PARENT/state/.backlog-handoff-i
 printf '%s\tattempt\n' "$(date +%s)" > "$PARENT/state/.secondmate-relaunch-ios"
 printf '%s\tdead\n' "$(date +%s)" > "$PARENT/state/.secondmate-relaunch-bound-ios"
 liveness_lock="$PARENT/state/.secondmate-liveness-ios.lock"
-( STATE="$PARENT/state" exec bash -c '. "$1" && fm_lock_acquire_wait "$2" && exec sleep 120' \
-    _ "$ROOT/bin/fm-wake-lib.sh" "$liveness_lock" ) &
+# The link is published before the claim finishes; signal only after acquire.
+# shellcheck disable=SC2016 # Positional parameters expand in the child shell.
+( STATE="$PARENT/state" exec bash -c '. "$1" && fm_lock_acquire_wait "$2" && touch "$3" && exec sleep 120' \
+    _ "$ROOT/bin/fm-wake-lib.sh" "$liveness_lock" "$TMP_ROOT/liveness.entered" ) &
 liveness_holder_pid=$!
 liveness_wait=0
-while [ ! -d "$liveness_lock" ]; do
+while [ ! -f "$TMP_ROOT/liveness.entered" ]; do
   kill -0 "$liveness_holder_pid" 2>/dev/null || fail "liveness lock holder exited before acquiring the lock"
   liveness_wait=$((liveness_wait + 1))
   [ "$liveness_wait" -le 250 ] || fail "liveness lock holder never acquired the lock"
   sleep 0.02
 done
-liveness_owner=$(cat "$liveness_lock/pid")
+liveness_owner=$liveness_holder_pid
+[ "$(cat "$liveness_lock/pid" 2>/dev/null)" = "$liveness_owner" ] \
+  || fail "liveness lock holder did not own its acquired lock"
 if remote_env "$ROOT/bin/fm-teardown.sh" ios > "$TMP_ROOT/teardown-liveness-busy.out" 2>&1; then
   fail "remote retirement proceeded under an active liveness episode"
 fi

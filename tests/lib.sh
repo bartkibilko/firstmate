@@ -47,6 +47,11 @@ umask 022
 # strips this to verify real refusal.
 export FM_GATE_REFUSE_BYPASS=1
 
+# Arms the test-only seams bin/ scripts expose (e.g. fm-afk-launch.sh's
+# FM_TEST_HARNESS harness pin). Production processes never export it, so a
+# leaked seam variable stays inert outside a suite.
+export FM_TEST_SEAM=1
+
 # Clear the task-worker marker bin/fm-spawn.sh exports into ship and scout
 # panes. This suite builds git-init fixture repositories whose primary checkout
 # it runs a copied bin/fm-test-run.sh in, and that runner refuses the primary

@@ -190,6 +190,19 @@ fm_afk_launch_usage() {
 }
 
 fm_afk_launch_primary_harness() {
+  # Test seam: FM_TEST_HARNESS names the simulated harness for suites that
+  # invoke this launch path directly (tests/fm-afk-launch.test.sh). It is
+  # honored only alongside FM_TEST_SEAM=1, the marker test suites set, so a
+  # leaked variable in a real primary's environment stays inert. Only an
+  # exact known-harness token is honored, so a stray or mistyped value falls
+  # through to real detection; bin/fm-harness.sh's production detect_own
+  # precedence never reads either variable.
+  case "${FM_TEST_SEAM:-}${FM_TEST_SEAM:+ }${FM_TEST_HARNESS:-}" in
+    "1 claude" | "1 codex" | "1 opencode" | "1 pi" | "1 pi-signed" | "1 grok" | "1 kimi" | "1 cursor" | "1 gemini" | "1 muse" | "1 rovo" | "1 omp" | "1 agy" | "1 devin" | "1 unknown")
+      printf '%s' "$FM_TEST_HARNESS"
+      return
+      ;;
+  esac
   "$FM_AFK_LAUNCH_DIR/fm-harness.sh" 2>/dev/null || printf unknown
 }
 
