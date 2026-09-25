@@ -3740,64 +3740,6 @@ EOF
   pass "OpenCode watcher plugin runs the supervision host on an opted-in home and relays every host line"
 }
 
-test_opencode_plugin_writes_the_dialog_mirror_on_an_opted_in_home() {
-  local plugin repo home log out status
-  plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
-  repo="$TMP_ROOT/opencode-mirror-root"
-  home="$TMP_ROOT/opencode-mirror-home"
-  log="$TMP_ROOT/opencode-mirror.log"
-  mkdir -p "$repo/bin" "$home/state" "$home/config"
-  git init -q "$repo"
-  : > "$repo/AGENTS.md"
-  cat > "$repo/bin/fm-host-mirror.sh" <<'SH'
-#!/usr/bin/env bash
-printf 'args=%s text=%s\n' "$*" "$(cat)" >> "${FM_MIRROR_LOG:?}"
-SH
-  printf '#!/usr/bin/env bash\nexit 1\n' > "$repo/bin/fm-watch-arm.sh"
-  chmod +x "$repo/bin/fm-host-mirror.sh" "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_MIRROR_LOG="$log" node 2>&1 <<'EOF'
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
-
-const mod = await import(pathToFileURL(process.env.PLUGIN).href);
-const client = {
-  session: {
-    promptAsync: async () => {},
-    messages: async () => ({
-      data: [
-        { info: { role: "user", id: "u1" }, parts: [{ type: "text", text: "earlier ask" }] },
-        { info: { role: "assistant", id: "a0" }, parts: [{ type: "text", text: "earlier reply" }] },
-        { info: { role: "assistant", id: "a1" }, parts: [{ type: "reasoning", text: "thinking" }, { type: "text", text: "final reply" }, { type: "tool", tool: "bash" }] },
-      ],
-    }),
-  },
-};
-const hooks = await mod.FmPrimaryWatchArm({ client, directory: process.env.WORKTREE, worktree: process.env.WORKTREE });
-const settle = async (lines) => {
-  for (let i = 0; i < 300; i += 1) {
-    const rows = existsSync(process.env.FM_MIRROR_LOG) ? readFileSync(process.env.FM_MIRROR_LOG, "utf8").trim().split("\n").filter(Boolean) : [];
-    if (rows.length >= lines) return rows;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  return existsSync(process.env.FM_MIRROR_LOG) ? readFileSync(process.env.FM_MIRROR_LOG, "utf8").trim().split("\n").filter(Boolean) : [];
-};
-const turn = { message: { id: "m1" }, parts: [{ type: "text", text: "keep it low effort" }, { type: "text", text: "attached file", synthetic: true }] };
-await hooks["chat.message"]({ sessionID: "s1", messageID: "m1" }, turn);
-await new Promise((resolve) => setTimeout(resolve, 300));
-if (existsSync(process.env.FM_MIRROR_LOG)) throw new Error(`a home without config/supervision-host was mirrored: ${readFileSync(process.env.FM_MIRROR_LOG, "utf8")}`);
-writeFileSync(`${process.env.FM_HOME}/config/supervision-host`, "");
-await hooks["chat.message"]({ sessionID: "s1", messageID: "m1" }, turn);
-await hooks.event({ event: { type: "session.idle", properties: { sessionID: "s1" } } });
-const rows = await settle(2);
-const want = ["args=append captain --id m1 text=keep it low effort", "args=append main --id a1 text=final reply"];
-if (rows.length !== 2 || !want.every((line) => rows.includes(line))) throw new Error(`unexpected mirror writes: ${rows.join(" | ")}`);
-EOF
-  )
-  status=$?
-  [ "$status" -eq 0 ] || fail "OpenCode watch plugin must write the dialog mirror on an opted-in home: $out"
-  pass "OpenCode watcher plugin mirrors the captain's message and the turn's final reply, only on an opted-in home"
-}
-
 test_opencode_pre_ready_actionable_close_preserves_its_successor() {
   local plugin repo home log release retired stop out status
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
@@ -4493,7 +4435,6 @@ test_opencode_primary_watch_plugin_requires_session_lock
 test_opencode_watch_arm_coordinator_respects_primary_scope
 test_opencode_primary_watch_plugin_rearms_after_wake
 test_opencode_primary_watch_plugin_runs_the_supervision_host
-test_opencode_plugin_writes_the_dialog_mirror_on_an_opted_in_home
 test_opencode_pre_ready_actionable_close_preserves_its_successor
 test_opencode_hung_successor_falls_back_to_typed_wake
 test_opencode_unretired_successor_falls_back_without_retry

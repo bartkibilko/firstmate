@@ -7,24 +7,23 @@
 # said"); this is its twin for a host that is not Pi, and the one owner of the
 # mirror file, its cursor, and the feed.
 #
-# WRITERS. Each primary's code-owned turn surfaces append here, never the
-# model: Claude and Grok through their prompt-submit and Stop hooks, Cursor
-# through its beforeSubmitPrompt and afterAgentResponse hooks, OpenCode through
-# its TUI plugin, and Codex through its prompt-submit, per-tool-call, and Stop
-# hooks reading the session's own rollout transcript, because a supervising
+# WRITERS. Each verified primary's code-owned turn surfaces append here, never
+# the model: Claude through its prompt-submit and Stop hooks, Cursor through
+# its beforeSubmitPrompt and afterAgentResponse hooks, and Codex through its
+# prompt-submit, per-tool-call, and Stop hooks reading the session's own
+# rollout transcript, because a supervising
 # Codex main stays inside one turn across its foreground checkpoints and a
 # captain message typed then reaches it as a mid-turn steer that fires no
 # prompt-submit or Stop hook. A writer appends captain text (the submitted
 # prompt) and MAIN text (the turn's final assistant message, or each assistant
-# message's text where the surface sees messages), never tool traffic. A
+# message's text where the transcript records it), never tool traffic. A
 # prompt the shared operational-input protocol classifies
 # (bin/fm-operational-input.sh: watcher wakes, guard follow-ups, launch briefs)
 # is fleet machinery, not dialog, and is dropped, and so is a prompt that opens
 # with the wrapper a harness puts around a turn it started itself: Claude
-# submits its Stop-hook rewake inside <task-notification>, and Grok its
-# background-task completion inside <system-reminder>, each with no other field
+# submits its Stop-hook rewake inside <task-notification>, with no other field
 # to tell it from a typed prompt (tests/fm-host-mirror-live-e2e.test.sh proves
-# both).
+# it).
 # In a Codex transcript the user items Codex adds itself open with a wrapper
 # tag or with its AGENTS.md preamble and are dropped the same way; the
 # transcript's read position is $STATE/.host-mirror-codex ("<path>\t<lines>").
@@ -41,7 +40,7 @@
 # (fm_supervision_host_main_key, bin/fm-supervision-engine-lib.sh). id is the
 # writer's own identity for the entry when it has one (a prompt id, a turn id,
 # a message id); an entry whose id is already recorded is not appended again,
-# so a surface that fires twice, or a plugin that re-reads its session, mirrors
+# so a surface that fires twice, or a transcript read again, mirrors
 # each entry once. Each text is capped at 4000 characters (head and tail kept,
 # as the Pi mirror caps), and the file keeps its newest 200 entries. Every
 # append and feed runs under $STATE/.host-mirror.lock.
@@ -67,18 +66,17 @@
 # were proven against the real harness to record a session's dialog from its
 # first captain prompt (docs/supervision-host.md "The dialog mirror"); the
 # host runs the attended posture only on those, and every other primary keeps
-# the attended behavior it has without the host. Grok and OpenCode write the
-# mirror but are not verified: their session takes the fleet lock during its
-# first turn, so that turn's captain prompt is never recorded.
+# the attended behavior it has without the host. Grok and OpenCode have no
+# writer: their session takes the fleet lock during its first turn, so that
+# turn's captain prompt could never be recorded, and a writer returns with
+# first-prompt capture (docs/supervision-host.md "The dialog mirror").
 #
 # Usage:
 #   fm-host-mirror.sh hook <harness>        a prompt-submit or turn-end hook payload on stdin
-#   fm-host-mirror.sh append captain|main [--id <id>]
-#                                           one entry's text on stdin (plugin writers)
 #   fm-host-mirror.sh feed <session> new|resume
 #   fm-host-mirror.sh commit
 #   fm-host-mirror.sh verified <harness>
-# hook, append, and commit always exit 0 and print nothing; feed exits 1 when
+# hook and commit always exit 0 and print nothing; feed exits 1 when
 # the mirror is missing, could not be read, or holds an invalid entry, and
 # prints nothing when there is nothing to feed.
 set -u
@@ -95,7 +93,7 @@ MIRROR_KEEP=200
 FEED_CAP=16000
 
 usage() {
-  sed -n '/^# Usage:/,/^# hook, append, and commit/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//' >&2
+  sed -n '/^# Usage:/,/^# hook and commit/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -105,7 +103,7 @@ case "${1:-}" in
     case " $FM_HOST_MIRROR_VERIFIED " in *" $2 "*) exit 0 ;; esac
     exit 1
     ;;
-  hook|append)
+  hook)
     # The opt-in gate runs before anything is sourced or created, so a home
     # without the file, and a crewmate worktree with no config/, stay inert.
     [ -f "$CONFIG/supervision-host" ] || exit 0
@@ -150,7 +148,7 @@ append_entry() {  # <captain|main> <text> [<id>]
   [ -n "$(printf '%s' "$text" | tr -d '[:space:]')" ] || return 0
   if [ "$tag" = captain ]; then
     case "${text#"${text%%[![:space:]]*}"}" in
-      '<task-notification>'*|'<system-reminder>'*) return 0 ;;
+      '<task-notification>'*) return 0 ;;
       '<'*|'# AGENTS.md instructions'*) [ "$SOURCE_HARNESS" != codex ] || return 0 ;;
     esac
     ! operational "$text" || return 0
@@ -233,12 +231,12 @@ case "$1" in
     # One line per field: event, tag, id; the text follows as the remainder.
     PARSED=$(printf '%s' "$PAYLOAD" | jq -r '
       if type != "object" then empty else
-        ((.hook_event_name // .hookEventName // "") | tostring) as $event
-        | if ($event == "UserPromptSubmit" or $event == "user_prompt_submit" or $event == "beforeSubmitPrompt") then
-            ["captain", ((.prompt_id // .promptId // .turn_id // .generation_id // "") | tostring), ((.prompt // "") | tostring)]
-          elif ($event == "Stop" or $event == "stop") then
-            ["main", ((.prompt_id // .promptId // .turn_id // .generation_id // "") | tostring),
-             ((.last_assistant_message // .lastAssistantMessage // "") | tostring)]
+        ((.hook_event_name // "") | tostring) as $event
+        | if ($event == "UserPromptSubmit" or $event == "beforeSubmitPrompt") then
+            ["captain", ((.prompt_id // .turn_id // .generation_id // "") | tostring), ((.prompt // "") | tostring)]
+          elif $event == "Stop" then
+            ["main", ((.prompt_id // .turn_id // .generation_id // "") | tostring),
+             ((.last_assistant_message // "") | tostring)]
           elif $event == "afterAgentResponse" then
             ["main", ((.generation_id // "") | tostring), ((.text // "") | tostring)]
           else empty end
@@ -249,16 +247,6 @@ case "$1" in
     TAG=$(printf '%s\n' "$PARSED" | sed -n '1p')
     ID=$(printf '%s\n' "$PARSED" | sed -n '2p')
     TEXT=$(printf '%s\n' "$PARSED" | sed '1,2d')
-    writer_in_scope || exit 0
-    append_entry "$TAG" "$TEXT" "$ID"
-    exit 0
-    ;;
-  append)
-    TAG=${2:-}
-    case "$TAG" in captain|main) ;; *) exit 0 ;; esac
-    ID=
-    [ "${3:-}" != --id ] || ID=${4:-}
-    TEXT=$(cat 2>/dev/null || true)
     writer_in_scope || exit 0
     append_entry "$TAG" "$TEXT" "$ID"
     exit 0

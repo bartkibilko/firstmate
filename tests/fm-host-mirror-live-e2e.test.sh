@@ -1,27 +1,21 @@
 #!/usr/bin/env bash
 # Live guard for the supervision host's dialog-mirror writers
 # (bin/fm-host-mirror.sh, docs/supervision-host.md "The dialog mirror"): each
-# INSTALLED primary harness with a mirror writer runs one real prompt in a
-# fixture primary checkout that carries this repo's tracked mirror
-# registrations, and the mirror must record the captain's prompt and main's
-# reply. The writers read vendor hook payloads, so only the real harness can
-# prove them. Grok and OpenCode writers are proven here too, but they are not
-# verified for the attended posture, because their session's first captain
-# prompt is never recorded. Opt-in because it submits prompts:
+# INSTALLED primary harness with a mirror writer (Claude, Codex, and Cursor)
+# runs one real prompt in a fixture primary checkout that carries this repo's
+# tracked mirror registrations, and the mirror must record the captain's prompt
+# and main's reply. The writers read vendor hook payloads, so only the real
+# harness can prove them. Opt-in because it submits prompts:
 #
 #   FM_HOST_MIRROR_LIVE_E2E=1 tests/fm-host-mirror-live-e2e.test.sh
 #
-# FM_HOST_MIRROR_LIVE_HARNESSES (default "claude codex cursor grok opencode")
-# narrows the set, and FM_HOST_MIRROR_LIVE_OPENCODE_MODEL picks OpenCode's
-# model (default opencode/big-pickle). An absent harness is reported, never
-# passed over silently, and a run that checked no harness fails. Cursor and
-# Grok fire project hooks only in an interactive session, OpenCode's headless
-# run exits before its plugin sees the session go idle, Claude and Grok must
-# show that a turn they start themselves (Claude's Stop-hook rewake, Grok's
-# background-task completion), which each submits as a prompt, is not mirrored
-# as the captain's words, and Codex must show that a captain message typed
-# during a running turn is mirrored, so every harness runs in a private tmux
-# server. An interactive Codex run records its folder and hook trust in
+# FM_HOST_MIRROR_LIVE_HARNESSES (default "claude codex cursor") narrows the
+# set. An absent harness is reported, never passed over silently, and a run
+# that checked no harness fails. Cursor fires project hooks only in an
+# interactive session, Claude must show that a turn it starts itself (its
+# Stop-hook rewake, which it submits as a prompt) is not mirrored as the
+# captain's words, and Codex must show that a captain message typed during a
+# running turn is mirrored, so every harness runs in a private tmux server. An interactive Codex run records its folder and hook trust in
 # ~/.codex/config.toml, as any first Codex session in a directory does.
 # shellcheck disable=SC2016 # single-quoted scripts expand inside their own shells
 set -u
@@ -31,8 +25,7 @@ set -u
 
 fm_live_gate opt-in FM_HOST_MIRROR_LIVE_E2E jq tmux
 
-HARNESSES=${FM_HOST_MIRROR_LIVE_HARNESSES:-claude codex cursor grok opencode}
-OPENCODE_MODEL=${FM_HOST_MIRROR_LIVE_OPENCODE_MODEL:-opencode/big-pickle}
+HARNESSES=${FM_HOST_MIRROR_LIVE_HARNESSES:-claude codex cursor}
 LAB=$(fm_test_tmproot fm-host-mirror-live)
 SOCKET="fmhm-$$"
 PROMPT='Reply with exactly the word mirror-ok and nothing else.'
@@ -43,7 +36,7 @@ cleanup() {
   local harness
   # One private tmux server per harness, so a server that is shutting down
   # after one harness's session ends can never swallow the next session.
-  for harness in claude codex cursor grok opencode; do
+  for harness in claude codex cursor; do
     tmux -L "$SOCKET-$harness" kill-server >/dev/null 2>&1 || true
   done
   fm_test_cleanup
@@ -55,7 +48,7 @@ unset FM_HOME FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_CONFIG_OVERRIDE TMUX TMUX_PA
 # other hook of this repo runs in it.
 make_primary() {  # <name>
   local root="$LAB/$1"
-  mkdir -p "$root/state" "$root/config" "$root/.claude" "$root/.codex" "$root/.cursor" "$root/.grok/hooks" "$root/.opencode/plugins"
+  mkdir -p "$root/state" "$root/config" "$root/.claude" "$root/.codex" "$root/.cursor"
   git init -q "$root"
   : > "$root/AGENTS.md"
   : > "$root/config/supervision-host"
@@ -66,9 +59,6 @@ make_primary() {  # <name>
     "$ROOT/.codex/hooks.json" > "$root/.codex/hooks.json"
   jq '.hooks |= (with_entries(.value |= map(select(.command | contains("fm-host-mirror.sh")))) | with_entries(select(.value | length > 0)))' \
     "$ROOT/.cursor/hooks.json" > "$root/.cursor/hooks.json"
-  cp "$ROOT/.grok/hooks/fm-primary-host-mirror.json" "$root/.grok/hooks/"
-  cp -R "$ROOT/.opencode/plugins/lib" "$root/.opencode/plugins/"
-  cp "$ROOT/.opencode/plugins/package.json" "$ROOT/.opencode/plugins/fm-primary-watch-arm.js" "$root/.opencode/plugins/"
   printf '%s\n' "$root"
 }
 
@@ -131,15 +121,6 @@ run_codex() {
     run_interactive codex codex --dangerously-bypass-approvals-and-sandbox -c "model_reasoning_effort=\"low\""
 }
 
-# Grok runs one background task, whose completion notice Grok submits as a
-# prompt that starts a turn of its own, as it does for the model-owned host
-# arm, so the guard also proves that notice is never mirrored as the captain's
-# words.
-run_grok() {
-  STEER_PROMPT='Start the shell command sleep 5 as a background task, then end your turn. When that task completes, reply with exactly the word mirror-ok.' \
-    REWAKE_WANTED=mirror-ok run_interactive grok grok --always-approve
-}
-
 # An interactive session in a private tmux server: answer a trust prompt when
 # one appears, type the prompt, and wait for the mirror.
 run_interactive() {  # <harness> <command> [arguments...]
@@ -163,7 +144,7 @@ run_interactive() {  # <harness> <command> [arguments...]
       *'Ask Codex to do anything'*) break ;;
       *'bypass permissions on'*) break ;;
       *'Do you trust the contents of this directory'*) tmux -L "$SOCKET-$harness" send-keys -t "$harness" y; sleep 3 ;;
-      *'Plan, search, build'*|*'Grok Build'*|*'ctrl+p'*|*'tab agents'*) break ;;
+      *'Plan, search, build'*) break ;;
     esac
     sleep 1
     i=$((i + 1))
@@ -198,7 +179,7 @@ run_interactive() {  # <harness> <command> [arguments...]
     [ "$(jq -r 'select(.tag == "main") | .seq' "$root/state/.host-mirror.jsonl" | wc -l)" -ge 2 ] \
       || fail "$harness $version: no second turn was mirrored, so the guard proved nothing about a harness-started turn"
     if jq -r 'select(.tag == "captain") | .text' "$root/state/.host-mirror.jsonl" \
-      | grep -E 'task-notification|system-reminder|lab rewake|Stop hook|Background task' >/dev/null; then
+      | grep -E 'task-notification|lab rewake|Stop hook' >/dev/null; then
       fail "$harness $version: a turn the harness started itself was mirrored as the captain's words: $(cat "$root/state/.host-mirror.jsonl")"
     fi
     printf 'ok - %s %s: a turn the harness started itself was not mirrored as the captain'"'"'s words\n' "$harness" "$version"
@@ -209,9 +190,8 @@ run_interactive() {  # <harness> <command> [arguments...]
 
 for harness in $HARNESSES; do
   case "$harness" in
-    claude|codex|opencode) bin=$harness ;;
+    claude|codex) bin=$harness ;;
     cursor) bin=cursor-agent ;;
-    grok) bin=grok ;;
     *) fail "unknown harness in FM_HOST_MIRROR_LIVE_HARNESSES: $harness" ;;
   esac
   if ! command -v "$bin" >/dev/null 2>&1; then
@@ -219,16 +199,11 @@ for harness in $HARNESSES; do
     ABSENT="$ABSENT $harness"
     continue
   fi
-  case "$harness" in
-    grok|opencode) ! "$ROOT/bin/fm-host-mirror.sh" verified "$harness" || fail "$harness must not claim a verified mirror while its first captain prompt goes unrecorded" ;;
-    *) "$ROOT/bin/fm-host-mirror.sh" verified "$harness" || fail "$harness is not in the verified-writer list this guard proves" ;;
-  esac
+  "$ROOT/bin/fm-host-mirror.sh" verified "$harness" || fail "$harness is not in the verified-writer list this guard proves"
   case "$harness" in
     claude) run_claude ;;
     codex) run_codex ;;
-    opencode) run_interactive opencode opencode -m "$OPENCODE_MODEL" ;;
     cursor) run_interactive cursor cursor-agent ;;
-    grok) run_grok ;;
   esac
 done
 

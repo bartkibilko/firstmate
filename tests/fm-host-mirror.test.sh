@@ -22,8 +22,7 @@ FAKEBIN=$(fm_fakebin "$TMP_ROOT/fakebin")
 ln -s /bin/bash "$FAKEBIN/claude"
 FAKE_CLAUDE="$FAKEBIN/claude"
 trap fm_test_cleanup EXIT
-unset FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_CONFIG_OVERRIDE CLAUDE_PROJECT_DIR CURSOR_PROJECT_DIR \
-  GROK_WORKSPACE_ROOT GROK_AGENT GROK_HOOK_EVENT GROK_HOOK_NAME GROK_SESSION_ID
+unset FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_CONFIG_OVERRIDE CLAUDE_PROJECT_DIR CURSOR_PROJECT_DIR
 
 # A primary checkout: git, AGENTS.md, and this repo's bin and hook registrations.
 PRIMARY_ROOT="$TMP_ROOT/primary"
@@ -50,8 +49,18 @@ as_session() {  # <home> <script>
 # The command string one tracked registration runs.
 claude_cmd() { jq -r --arg e "$1" '.hooks[$e][].hooks[] | select(.command | contains("fm-host-mirror.sh")) | .command' "$ROOT/.claude/settings.json"; }
 codex_cmd() { jq -r --arg e "$1" '.hooks[$e][].hooks[] | select(.command | contains("fm-host-mirror.sh")) | .command' "$ROOT/.codex/hooks.json"; }
-grok_cmd() { jq -r --arg e "$1" '.hooks[$e][].hooks[].command' "$ROOT/.grok/hooks/fm-primary-host-mirror.json"; }
 cursor_cmd() { jq -r --arg e "$1" '.hooks[$e][] | select(.command | contains("fm-host-mirror.sh")) | .command' "$ROOT/.cursor/hooks.json"; }
+
+# Inside an as_session script: one Claude prompt-submit (captain) or Stop
+# (main) hook payload carrying <text>, through the mirror's hook writer.
+SAY='say() {  # <captain|main> <text> [<id>]
+  if [ "$1" = captain ]; then
+    jq -cn --arg t "$2" --arg id "${3:-}" "{hook_event_name: \"UserPromptSubmit\", prompt_id: \$id, prompt: \$t}"
+  else
+    jq -cn --arg t "$2" --arg id "${3:-}" "{hook_event_name: \"Stop\", prompt_id: \$id, last_assistant_message: \$t}"
+  fi | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude
+}
+'
 
 entries() {  # <home> -> "<tag>|<text>" per entry
   jq -r '"\(.tag)|\(.text)"' "$1/state/.host-mirror.jsonl" 2>/dev/null
@@ -62,17 +71,14 @@ test_every_harness_registration_writes_the_mirror() {
   home=$(make_home harnesses)
   CLAUDE_PROMPT=$(claude_cmd UserPromptSubmit) CLAUDE_STOP=$(claude_cmd Stop) \
   CODEX_PROMPT=$(codex_cmd UserPromptSubmit) CODEX_STOP=$(codex_cmd Stop) \
-  GROK_PROMPT=$(grok_cmd UserPromptSubmit) GROK_STOP=$(grok_cmd Stop) \
   CURSOR_PROMPT=$(cursor_cmd beforeSubmitPrompt) CURSOR_RESPONSE=$(cursor_cmd afterAgentResponse) \
   as_session "$home" '
     run() { printf "%s" "$2" | env CLAUDE_PROJECT_DIR="$PRIMARY_ROOT" CURSOR_PROJECT_DIR="$PRIMARY_ROOT" \
-      GROK_WORKSPACE_ROOT="$PRIMARY_ROOT" bash -c "cd \"$PRIMARY_ROOT\" && $1"; }
+      bash -c "cd \"$PRIMARY_ROOT\" && $1"; }
     run "$CLAUDE_PROMPT" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt_id\":\"c1\",\"prompt\":\"claude captain\"}"
     run "$CLAUDE_STOP" "{\"hook_event_name\":\"Stop\",\"prompt_id\":\"c1\",\"last_assistant_message\":\"claude main\"}"
     run "$CODEX_PROMPT" "{\"hook_event_name\":\"UserPromptSubmit\",\"turn_id\":\"x1\",\"prompt\":\"codex captain\"}"
     run "$CODEX_STOP" "{\"hook_event_name\":\"Stop\",\"turn_id\":\"x1\",\"last_assistant_message\":\"codex main\"}"
-    run "$GROK_PROMPT" "{\"hookEventName\":\"user_prompt_submit\",\"promptId\":\"g1\",\"prompt\":\"grok captain\",\"hook_event_name\":\"UserPromptSubmit\"}"
-    run "$GROK_STOP" "{\"hookEventName\":\"stop\",\"promptId\":\"g1\",\"lastAssistantMessage\":\"grok main\",\"hook_event_name\":\"Stop\"}"
     run "$CURSOR_PROMPT" "{\"hook_event_name\":\"beforeSubmitPrompt\",\"generation_id\":\"u1\",\"prompt\":\"cursor captain\",\"cursor_version\":\"x\"}"
     run "$CURSOR_RESPONSE" "{\"hook_event_name\":\"afterAgentResponse\",\"generation_id\":\"u1\",\"text\":\"cursor main\",\"cursor_version\":\"x\"}"
   ' || fail "a tracked mirror hook failed"
@@ -81,11 +87,9 @@ test_every_harness_registration_writes_the_mirror() {
 main|claude main
 captain|codex captain
 main|codex main
-captain|grok captain
-main|grok main
 captain|cursor captain
 main|cursor main" "$out" "every tracked registration must write its captain prompt and main reply, in order"
-  pass "mirror: the Claude, Codex, Grok, and Cursor registrations each write the captain's prompt and main's reply"
+  pass "mirror: the Claude, Codex, and Cursor registrations each write the captain's prompt and main's reply"
 }
 
 # A supervising Codex main stays inside one turn, so a captain message typed
@@ -127,8 +131,8 @@ main|Will do." "$(entries "$home")" \
 }
 
 # Non-host invariance: on a home without config/supervision-host, every surface
-# this rung added - each tracked mirror registration, the OpenCode writer's
-# append, the drain's BRANCH OUTCOMES, and the quiet check - prints nothing and
+# this rung added - each tracked mirror registration, the drain's BRANCH
+# OUTCOMES, and the quiet check - prints nothing and
 # leaves the home's state byte-for-byte as it was, even when the home holds an
 # outcome store with an unprocessed captain row (a home that once ran a host).
 test_home_without_the_flag_is_untouched() {
@@ -141,18 +145,16 @@ test_home_without_the_flag_is_untouched() {
   before=$(snapshot "$home")
   CLAUDE_PROMPT=$(claude_cmd UserPromptSubmit) CLAUDE_STOP=$(claude_cmd Stop) \
   CODEX_PROMPT=$(codex_cmd UserPromptSubmit) CODEX_POST=$(codex_cmd PostToolUse) CODEX_STOP=$(codex_cmd Stop) \
-  GROK_PROMPT=$(grok_cmd UserPromptSubmit) GROK_STOP=$(grok_cmd Stop) \
   CURSOR_PROMPT=$(cursor_cmd beforeSubmitPrompt) CURSOR_RESPONSE=$(cursor_cmd afterAgentResponse) \
   as_session "$home" '
     run() { printf "%s" "$2" | env CLAUDE_PROJECT_DIR="$PRIMARY_ROOT" CURSOR_PROJECT_DIR="$PRIMARY_ROOT" \
-      GROK_WORKSPACE_ROOT="$PRIMARY_ROOT" bash -c "cd \"$PRIMARY_ROOT\" && $1"; }
-    for cmd in "$CLAUDE_PROMPT" "$CODEX_PROMPT" "$GROK_PROMPT" "$CURSOR_PROMPT"; do
+      bash -c "cd \"$PRIMARY_ROOT\" && $1"; }
+    for cmd in "$CLAUDE_PROMPT" "$CODEX_PROMPT" "$CURSOR_PROMPT"; do
       run "$cmd" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"hello\",\"transcript_path\":\"$FM_HOME/missing.jsonl\"}"
     done
-    for cmd in "$CLAUDE_STOP" "$CODEX_POST" "$CODEX_STOP" "$GROK_STOP" "$CURSOR_RESPONSE"; do
+    for cmd in "$CLAUDE_STOP" "$CODEX_POST" "$CODEX_STOP" "$CURSOR_RESPONSE"; do
       run "$cmd" "{\"hook_event_name\":\"Stop\",\"last_assistant_message\":\"hi\",\"text\":\"hi\"}"
     done
-    printf "hello" | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" append captain --id m1
   ' > "$home/writers.out" 2>&1 || fail "a mirror registration failed on a home without the flag: $(cat "$home/writers.out")"
   [ ! -s "$home/writers.out" ] || fail "a mirror registration printed on a home without the flag: $(cat "$home/writers.out")"
   after=$(snapshot "$home")
@@ -172,7 +174,6 @@ test_writers_are_inert_without_the_opt_in() {
   home=$(make_home no-opt-in 0)
   as_session "$home" '
     printf "%s" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"hello\"}" | "$MIRROR" hook claude
-    printf "hello" | "$MIRROR" append captain
   ' || fail "an inert writer failed"
   assert_absent "$home/state/.host-mirror.jsonl" "a home without config/supervision-host must mirror nothing"
   crew="$TMP_ROOT/crew-worktree"
@@ -195,8 +196,6 @@ test_operational_foreign_and_unowned_input_is_dropped() {
       | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude
     printf "%s" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"\\n\\n<task-notification>\\n<summary>Stop hook feedback</summary>\\n</task-notification>\"}" \
       | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude
-    printf "%s" "{\"hookEventName\":\"user_prompt_submit\",\"prompt\":\"<system-reminder> Background task completed (exit code: 0).</system-reminder>\"}" \
-      | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook grok
     printf "%s" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"kept\"}" \
       | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude
   ' || fail "a writer failed"
@@ -217,10 +216,10 @@ test_entries_are_deduplicated_and_capped() {
   local home long text
   home=$(make_home capped)
   long=$(awk 'BEGIN { for (i = 0; i < 5000; i++) printf "x" }')
-  LONG=$long as_session "$home" '
+  LONG=$long as_session "$home" "$SAY"'
     for n in 1 2; do printf "%s" "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt_id\":\"p1\",\"prompt\":\"once\"}" \
       | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude; done
-    printf "%s" "$LONG" | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" append main --id long
+    say main "$LONG" long
   ' || fail "a writer failed"
   [ "$(grep -c '"text":"once"' "$home/state/.host-mirror.jsonl")" -eq 1 ] || fail "an entry whose id is already recorded must not be appended again"
   text=$(jq -r 'select(.id == "long") | .text' "$home/state/.host-mirror.jsonl")
@@ -232,11 +231,10 @@ test_entries_are_deduplicated_and_capped() {
 test_feed_resumes_reanchors_and_is_bounded() {
   local home out
   home=$(make_home feed)
-  as_session "$home" '
-    add() { printf "%s" "$2" | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" append "$1"; }
-    add captain "first ask"; add main "first answer"
+  as_session "$home" "$SAY"'
+    say captain "first ask"; say main "first answer"
     "$MIRROR" feed s1 new > "$FM_HOME/feed.1" && "$MIRROR" commit
-    add captain "second ask"
+    say captain "second ask"
     "$MIRROR" feed s1 resume > "$FM_HOME/feed.uncommitted"
     "$MIRROR" feed s1 resume > "$FM_HOME/feed.2" && "$MIRROR" commit
     "$MIRROR" feed s1 resume > "$FM_HOME/feed.3" && "$MIRROR" commit
@@ -251,11 +249,11 @@ test_feed_resumes_reanchors_and_is_bounded() {
 [main] first answer
 [captain] second ask" "$(cat "$home/feed.4")" "a conversation the cursor does not belong to must re-anchor"
 
-  as_session "$home" '
-    printf "%s" "a later session" | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" append captain
+  as_session "$home" "$SAY"'
+    say captain "a later session"
     "$MIRROR" feed s3 new > "$FM_HOME/feed.5"
     big=$(awk "BEGIN { for (i = 0; i < 3000; i++) printf \"y\" }")
-    for n in 1 2 3 4 5 6 7; do printf "%s" "$n $big" | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" append main; done
+    for n in 1 2 3 4 5 6 7; do say main "$n $big"; done
     "$MIRROR" feed s4 new > "$FM_HOME/feed.6"
   ' || fail "the second session failed"
   assert_equals "[captain] a later session" "$(cat "$home/feed.5")" "a new main session must never be fed an earlier session's dialog"

@@ -72,9 +72,7 @@ Each primary's code-owned turn surfaces write it, never the model:
 |---|---|---|
 | Claude | the `UserPromptSubmit` hook's prompt | the `Stop` hook's last assistant message |
 | Codex | the session's rollout transcript, read at its `UserPromptSubmit`, `PostToolUse`, and `Stop` hooks | the same transcript |
-| Grok | the `UserPromptSubmit` hook's prompt | the `Stop` hook's last assistant message |
 | Cursor | the `beforeSubmitPrompt` hook's prompt | the `afterAgentResponse` hook's text |
-| OpenCode | the plugin's `chat.message` parts | the plugin's final assistant message at `session.idle` |
 
 A captain line is written the moment the prompt is submitted, and operational input (watcher wakes, guard follow-ups, launch briefs) is dropped by the shared operational-input protocol, as is a turn the harness starts itself, such as Claude's Stop-hook rewake.
 A supervising Codex main stays inside one turn across its foreground checkpoints, so a captain message typed then reaches it as a mid-turn steer that fires no prompt or Stop hook; its transcript is the only record of it, and each tool call's hook reads what the transcript gained.
@@ -82,8 +80,8 @@ Tool traffic is never mirrored; the engine reads files and records itself.
 A new engine conversation re-anchors on the current main session's newest entries, and a resumed one gets only what is new, so an earlier session's dialog never steers today's.
 A primary's mirror is verified only when its writers record the session's dialog from its first captain prompt, and only a verified primary runs the attended posture; every other primary keeps every attended close on main, and its away posture needs no mirror and is unchanged.
 omp has no verified writer yet, because no omp was available to prove one against.
-Grok and OpenCode write the mirror but are not verified: their session takes the fleet lock during its first turn, so that turn's captain prompt is never recorded, and the engine would judge without the captain's opening words.
-Follow-up: recording that first prompt on Grok and OpenCode, which would let them run the attended posture.
+Grok and OpenCode have no writer: their session takes the fleet lock during its first turn, so that turn's captain prompt could never be recorded and the engine would judge without the captain's opening words, and no captain dialog is kept that nothing reads.
+Follow-up: capturing that first prompt on Grok and OpenCode would reintroduce their writers and let them run the attended posture.
 A captain message typed while an engine turn is already running reaches the engine at its next wake.
 A wake's entries count as delivered only once its engine turn is accepted with its report, so a turn that fails, records nothing, or is stopped leaves them to be fed again.
 An attended wake whose mirror is missing or cannot be read, or holds an entry that does not parse, reaches main with `the dialog mirror could not be read` before any engine turn, and the cursor stays where it was; an away wake runs without the mirror.
@@ -93,6 +91,7 @@ An attended wake whose mirror is missing or cannot be read, or holds an entry th
 A captain-verdict outcome the attended engine records wakes main once, through the owner's ordinary wake path, with one `supervision-host: branch-outcome:` line naming its store rows.
 Main drains, and `bin/fm-wake-drain.sh` presents every unprocessed captain outcome in its `BRANCH OUTCOMES` section, oldest first and bounded, with the exact `bin/fm-branch-outcome.sh mark-processed --through <seq>` acknowledgement; that presentation is what the Pi branch's visible entry is, so it advances the store's read cursor through the rows it presents, and a row its byte cap leaves out stays unread and follows on the next drain.
 Every later drain, including the session-start digest, presents them again until main acknowledges them, so an ignored outcome costs no extra turns and is never lost.
+One limit: if the captain goes away and returns while an attended engine turn is running, and the host is terminated before that turn's `branch-outcome` wake is delivered, no immediate wake reaches main; the captain row is still durable, and the next drain's `BRANCH OUTCOMES` section presents it until it is acknowledged with `mark-processed`.
 The section runs only for main on an opted-in home whose primary is not Pi, and never while the away record exists; after the return it presents the away window's captain outcomes, which the return brief also listed, as the Pi branch does after a return.
 An unprocessed captain outcome is never adopted as processed, so a home that opts in mid-session cannot lose its first one; outcomes recorded before this section existed are presented once more, the safe direction.
 Routine outcomes never open a main turn: the next drain lists each once, above the captain outcomes and with nothing to acknowledge, the way the Pi branch's routine notes reach main's transcript without a turn, and silent fleet reviews never appear.

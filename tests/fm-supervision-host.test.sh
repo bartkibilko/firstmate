@@ -554,8 +554,9 @@ test_attended_main_only_close_passes_straight_to_main() {
   pass "host: an attended decision close stays main's exactly as the plain arm delivers it"
 }
 
-# Grok and OpenCode cannot mirror a session's first captain prompt and omp has
-# no proven writer, so none of them has a verified dialog mirror: every attended
+# Grok and OpenCode have no mirror writer, because they cannot record a
+# session's first captain prompt, and omp has no proven writer, so none of them
+# has a verified dialog mirror: every attended
 # close reaches main as without the host, while the away posture, which needs
 # no mirror, still runs on the engine.
 test_primary_without_a_verified_mirror_runs_away_only() {

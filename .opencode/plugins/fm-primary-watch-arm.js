@@ -13,12 +13,6 @@ import { encodeFirstmateOperationalInput } from "./lib/fm-operational-input.js";
 // line as soon as it is verified, so readiness and the handling handoff work
 // as they do for the arm, with a longer readiness budget for the host's own
 // startup. Without the file nothing below changes.
-//
-// The same file turns on the host's dialog mirror (bin/fm-host-mirror.sh owns
-// the mirror and its rules): each captain message, from chat.message, and each
-// turn's final assistant message, at session.idle, are appended for the host's
-// engine session. The plugin's own watcher prompts are operational input,
-// which the mirror drops.
 const COORDINATOR_KEY = "__firstmateOpenCodeWatchArm";
 // 35s on Windows so the budget stays above arm's MSYS confirm default (30s in
 // bin/fm-watch-arm.sh): a slow but successful Git Bash cold start must not be
@@ -528,45 +522,6 @@ async function ensureArm(paths, sessionID, client, predecessorArmPid = "", inclu
   return armAttempt(await waitForArmReady(armChild), armChild, includeArmChild);
 }
 
-function textOfParts(parts) {
-  return (Array.isArray(parts) ? parts : [])
-    .filter((part) => part?.type === "text" && !part.synthetic && !part.ignored && typeof part.text === "string")
-    .map((part) => part.text)
-    .join("\n")
-    .trim();
-}
-
-function mirrorEntry(paths, tag, text, id) {
-  if (!text || !existsSync(`${paths.config}/supervision-host`)) return Promise.resolve();
-  return new Promise((resolveMirror) => {
-    const proc = spawn("bash", [`${paths.root}/bin/fm-host-mirror.sh`, "append", tag, ...(id ? ["--id", String(id)] : [])], {
-      cwd: paths.root,
-      env: { ...process.env, FM_HOME: paths.home, FM_ROOT_OVERRIDE: paths.root, FM_CONFIG_OVERRIDE: paths.config },
-      stdio: ["pipe", "ignore", "ignore"],
-    });
-    proc.on("error", () => resolveMirror());
-    proc.on("close", () => resolveMirror());
-    proc.stdin.on("error", () => {});
-    proc.stdin.end(text);
-  });
-}
-
-async function mirrorFinalAssistant(paths, client, sessionID) {
-  if (!existsSync(`${paths.config}/supervision-host`)) return;
-  try {
-    const result = await client.session.messages({ path: { id: sessionID } });
-    const messages = Array.isArray(result?.data) ? result.data : [];
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const info = messages[index]?.info;
-      if (info?.role !== "assistant") continue;
-      await mirrorEntry(paths, "main", textOfParts(messages[index]?.parts), info.id);
-      return;
-    }
-  } catch {
-    // The mirror is context; a failed read costs the next wake that context only.
-  }
-}
-
 export const FmPrimaryWatchArm = async ({ client, directory, worktree }) => {
   const root = worktree ? resolvePath(worktree) : await resolveRoot(directory);
   const paths = effectivePaths(root);
@@ -575,14 +530,10 @@ export const FmPrimaryWatchArm = async ({ client, directory, worktree }) => {
   };
 
   return {
-    "chat.message": async (input, output) => {
-      void mirrorEntry(paths, "captain", textOfParts(output?.parts), output?.message?.id ?? input?.messageID);
-    },
     event: async ({ event }) => {
       if (event.type !== "session.idle") return;
       const sessionID = event.properties?.sessionID;
       if (!sessionID) return;
-      void mirrorFinalAssistant(paths, client, sessionID);
       void ensureArm(paths, sessionID, client);
     },
   };
