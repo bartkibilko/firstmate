@@ -42,7 +42,7 @@ herdr_version=$(lab status --json | jq -r '.client.version // "unknown"')
 verdict=unknown
 for _ in $(seq 1 45); do
   state=$(lab agent get "$pane" 2>/dev/null | jq -r '.result.agent.agent_status // empty')
-  if [ "$state" = idle ] || [ "$state" = done ]; then
+  if [ "$state" = idle ] || [ "$state" = "done" ]; then
     verdict=$(fm_backend_herdr_composer_state "$HERDR_LAB_SESSION:$pane")
     [ "$verdict" = empty ] && break
   fi
@@ -70,7 +70,7 @@ verdict=unknown worked=0
 for _ in $(seq 1 120); do
   state=$(lab agent get "$pane" 2>/dev/null | jq -r '.result.agent.agent_status // empty')
   [ "$state" = working ] && worked=1
-  if [ "$worked" = 1 ] && { [ "$state" = idle ] || [ "$state" = done ]; }; then
+  if [ "$worked" = 1 ] && { [ "$state" = idle ] || [ "$state" = "done" ]; }; then
     verdict=$(fm_backend_herdr_composer_state "$HERDR_LAB_SESSION:$pane")
     [ "$verdict" = empty ] && break
   fi
