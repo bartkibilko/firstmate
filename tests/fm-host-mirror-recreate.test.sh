@@ -43,5 +43,17 @@ export PATH="$TMP/bin:$PATH"
   [ "$(cat "$FM_HOME/resumed-feed")" = "[captain] dialog after recreation" ] || {
     echo "recreated captain dialog missing from resumed feed" >&2; exit 1;
   }
+  # The feed is now staged but the engine has not accepted the turn. If the
+  # mirror is recreated here, the eventual commit must not skip new dialog.
+  staged=$(cut -f1 "$FM_STATE_OVERRIDE/.host-mirror-cursor.next")
+  rm "$FM_STATE_OVERRIDE/.host-mirror.jsonl"
+  say "dialog during staged turn"
+  new=$(jq -r .seq "$FM_STATE_OVERRIDE/.host-mirror.jsonl")
+  [ "$new" -gt "$staged" ] || { echo "sequence restarted: $new <= staged $staged" >&2; exit 1; }
+  "$FM_ROOT_OVERRIDE/bin/fm-host-mirror.sh" commit
+  "$FM_ROOT_OVERRIDE/bin/fm-host-mirror.sh" feed engine resume > "$FM_HOME/after-staged-feed"
+  [ "$(cat "$FM_HOME/after-staged-feed")" = "[captain] dialog during staged turn" ] || {
+    echo "dialog appended during staged turn missing after commit" >&2; exit 1;
+  }
 ' || exit 1
-echo 'ok - recreated mirror continues past the committed engine cursor'
+echo 'ok - recreated mirror continues past committed and staged engine cursors'

@@ -168,13 +168,15 @@ append_entry() {  # <captain|main> <text> [<id>]
   fi
   last=$(jq -Rn '[inputs | fromjson? | select(type == "object") | .seq | numbers] | max // 0' "$MIRROR" 2>/dev/null)
   case "$last" in ''|*[!0-9]*) last=0 ;; esac
-  # The file may have been removed while the engine cursor survived. Keep
-  # sequence numbers ahead of that cursor so resumed feeds see new dialog.
-  if [ -f "$CURSOR" ]; then
-    IFS="$(printf '\t')" read -r seq _ < "$CURSOR" || true
-    case "$seq" in ''|*[!0-9]*) seq=0 ;; esac
-    [ "$seq" -le "$last" ] || last=$seq
-  fi
+  # The file may have been removed while either cursor survived. Keep new
+  # sequence numbers ahead of both so a later commit cannot skip new dialog.
+  for tmp in "$CURSOR" "$STAGED"; do
+    if [ -f "$tmp" ]; then
+      IFS="$(printf '\t')" read -r seq _ < "$tmp" || true
+      case "$seq" in ''|*[!0-9]*) seq=0 ;; esac
+      [ "$seq" -le "$last" ] || last=$seq
+    fi
+  done
   seq=$((last + 1))
   jq -cn --argjson seq "$seq" --argjson epoch "$(date +%s)" --arg key "$key" --arg id "$id" \
     --arg tag "$tag" --arg text "$text" --argjson cap "$MIRROR_CAP" '
