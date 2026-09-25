@@ -151,6 +151,9 @@ make_home() {  # <name> <attended|away> [config line]
   [ -n "${3:-}" ] || : > "$home/config/supervision-host"
   printf 'project=demo\nwindow=fm-demo\nharness=claude\n' > "$home/state/demo.meta"
   echo handle > "$home/stub-mode"
+  # The captain has spoken in this session, so an attended wake has a mirror.
+  [ "$2" != attended ] \
+    || printf '{"hook_event_name":"UserPromptSubmit","prompt_id":"p0","prompt":"watch the fleet for me"}' > "$home/mirror-seed.0"
   if [ "$2" = away ]; then
     FM_HOME="$home" "$CONTRACT" enter --words 'watch the fleet; merge nothing' >/dev/null 2>&1 \
       || fail "fixture: could not record the away posture"
@@ -466,7 +469,7 @@ test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main() {
   first="$home/engine-call.1"
   assert_re '^actor=branch$' "$first" "the attended engine must run as the branch actor"
   assert_no_re '^POSTURE: AWAY' "$first" "an attended wake must carry no away tail"
-  assert_re '^arg=FIRSTMATE SUPERVISION WAKE: signal: ' "$first" "the attended wake must carry the close"
+  assert_re '^(arg=)?FIRSTMATE SUPERVISION WAKE: signal: ' "$first" "the attended wake must carry the close"
   assert_re '	handled	turn=[^	]*	posture=attended	' "$home/state/.supervision-host.log" "the ledger must record the attended turn"
   assert_grep '"verdict":"routine"' "$home/state/branch-outcomes.jsonl" "the engine's routine report did not reach the store"
   assert_no_grep 'demo.status' "$home/state/.wake-queue" "the engine's acknowledgement did not consume the wake"
@@ -697,8 +700,8 @@ SH
 }
 
 # The attended engine never judges without the captain's words: a mirror that
-# cannot be read, or that holds an entry that does not parse, hands the wake to
-# main before any engine turn and leaves the mirror cursor where it was.
+# is missing, cannot be read, or holds an entry that does not parse hands the
+# wake to main before any engine turn and leaves the mirror cursor where it was.
 test_attended_wake_with_an_unreadable_mirror_reaches_main() {
   local home mirror cursor
   home=$(make_home attended-bad-mirror attended)
@@ -710,6 +713,19 @@ test_attended_wake_with_an_unreadable_mirror_reaches_main() {
   wait_until 250 handled_at_least "$home" 1 || fail "bad mirror: the first wake was not handled: $(cat "$home/state/.supervision-host.log")"
   cursor=$(cat "$home/state/.host-mirror-cursor") || fail "fixture: the handled turn committed no mirror cursor"
 
+  rm -f "$mirror"
+  append_status "$home" 'missing mirror'
+  wait_until 250 host_exited "$home" || fail "bad mirror: a missing mirror did not hand the wake to main"
+  assert_re '^signal: .*demo.status' "$home/host.out" "the handed-back close must carry the watcher's reason line"
+  assert_re '^supervision-host: the supervision session could not take this wake: the dialog mirror could not be read; this wake is yours$' \
+    "$home/host.out" "a missing mirror must hand the wake to main with its reason"
+  [ "$(engine_calls "$home")" -eq 1 ] || fail "bad mirror: the engine ran without a mirror"
+  [ "$(cat "$home/state/.host-mirror-cursor")" = "$cursor" ] || fail "a missing mirror moved the cursor"
+  [ ! -e "$home/state/.host-mirror-cursor.next" ] || fail "a missing mirror staged a cursor"
+  main_drain_and_ack "$home"
+
+  park_again "$home"
+  [ -f "$mirror" ] || fail "fixture: the next park did not write the mirror again"
   chmod 000 "$mirror"
   append_status "$home" 'unreadable mirror'
   wait_until 250 host_exited "$home" || fail "bad mirror: an unreadable mirror did not hand the wake to main"
@@ -732,7 +748,7 @@ test_attended_wake_with_an_unreadable_mirror_reaches_main() {
   [ "$(engine_calls "$home")" -eq 1 ] || fail "bad mirror: the engine ran past a malformed mirror entry"
   [ "$(cat "$home/state/.host-mirror-cursor")" = "$cursor" ] || fail "a malformed mirror entry moved the cursor"
   [ ! -e "$home/state/.host-mirror-cursor.next" ] || fail "a malformed mirror entry staged a cursor past it"
-  pass "host: an attended wake whose mirror cannot be read or holds a malformed entry reaches main before any engine turn, and the cursor stays put"
+  pass "host: an attended wake whose mirror is missing, cannot be read, or holds a malformed entry reaches main before any engine turn, and the cursor stays put"
 }
 
 test_latch_trips_after_two_engine_errors_then_probes_and_recovers() {

@@ -848,6 +848,13 @@ unit_supervision_host_claude_home_runs_no_away_daemon() {
     || [ -e "$st/state/.afk" ] || [ -e "$st/state/.afk-daemon-terminal" ]; then
     fail "supervision host: quiet-check during the latch's cooldown must say the session is paused, not quiet, and start nothing (rc=$rc): $out"
   fi
+  printf 'key=%s\nerrors=2\ncooldown=300\nretry_after=%s\n' "$key" "$(( $(date +%s) - 10 ))" > "$st/state/.supervision-host-health"
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" quiet-check 2>&1)
+  rc=$?
+  if [ "$rc" -ne 0 ] || printf '%s' "$out" | grep -F 'Quiet mode needs nothing' >/dev/null \
+    || ! printf '%s' "$out" | grep -F 'paused after repeated engine errors: routine wakes reach this conversation until it recovers, and its next wake retries it' >/dev/null; then
+    fail "supervision host: quiet-check after the retry time but before a successful probe must still say the session is paused (rc=$rc): $out"
+  fi
   printf 'key=%s\nerrors=0\ncooldown=0\nretry_after=0\n' "$key" > "$st/state/.supervision-host-health"
   out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" quiet-check 2>&1)
   printf '%s' "$out" | grep -F 'Quiet mode needs nothing on this home' >/dev/null \

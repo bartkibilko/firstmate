@@ -49,14 +49,13 @@
 # FEED. $STATE/.host-mirror-cursor holds "<seq>\t<engine session>": the newest
 # entry already fed to that engine conversation. `feed <session> new|resume`
 # prints what the next wake carries, one "[captain] ..." or "[main] ..." entry
-# after another, oldest first, and fails, staging nothing, when the mirror
-# cannot be read or holds an entry that does not parse; otherwise it stages
-# the cursor it would reach in
-# $STATE/.host-mirror-cursor.next; `commit` advances the cursor to it once the
-# engine turn that carried the wake is accepted with its report, so a wake the
-# engine never completed leaves its entries unread for the next one. A resumed
-# conversation
-# gets the current main session's entries after the cursor; a new one (every
+# after another, oldest first, and fails, staging nothing, when the mirror is
+# missing, cannot be read, or holds an entry that does not parse; otherwise it
+# stages the cursor it would reach in $STATE/.host-mirror-cursor.next, and
+# `commit` advances the cursor to it once the engine turn that carried the wake
+# is accepted with its report, so a wake the engine never completed leaves its
+# entries unread for the next one. A resumed conversation gets the current
+# main session's entries after the cursor; a new one (every
 # main session start, rotation, or failed turn) gets the current main
 # session's newest entries, so a fresh conversation re-anchors on this
 # session's dialog and never on an earlier session's. The feed is bounded to
@@ -80,8 +79,8 @@
 #   fm-host-mirror.sh commit
 #   fm-host-mirror.sh verified <harness>
 # hook, append, and commit always exit 0 and print nothing; feed exits 1 when
-# the mirror could not be read or holds an invalid entry, and prints nothing
-# when there is nothing to feed.
+# the mirror is missing, could not be read, or holds an invalid entry, and
+# prints nothing when there is nothing to feed.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -116,8 +115,10 @@ case "${1:-}" in
   *) usage ;;
 esac
 
-command -v jq >/dev/null 2>&1 || exit 0
-[ -d "$STATE" ] || exit 0
+if ! command -v jq >/dev/null 2>&1 || [ ! -d "$STATE" ]; then
+  [ "$1" != feed ] || exit 1
+  exit 0
+fi
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
@@ -278,7 +279,7 @@ SESSION=$2
 MODE=$3
 case "$MODE" in new|resume) ;; *) usage ;; esac
 rm -f "$STAGED"
-[ -f "$MIRROR" ] || exit 0
+[ -f "$MIRROR" ] || exit 1
 KEY=$(fm_supervision_host_main_key "$STATE")
 fm_lock_acquire_wait "$LOCK" || exit 1
 CURSOR_SEQ=0

@@ -120,9 +120,10 @@ fm_supervision_host_health_key() {
   printf '%s|%s|%s\n' "$(fm_supervision_host_main_key "$1")" "$FM_SUPERVISION_ENGINE" "$FM_SUPERVISION_ENGINE_MODEL"
 }
 
-# fm_supervision_host_paused_until <state-dir>: while that latch hands every
-# wake to main, print the epoch at which the next wake probes the engine and
-# succeed; otherwise fail. Needs fm_supervision_host_config first.
+# fm_supervision_host_paused_until <state-dir>: while that latch holds, from
+# the trip until a probe succeeds, print the epoch from which the next wake
+# probes the engine (every wake before it reaches main) and succeed; otherwise
+# fail. Needs fm_supervision_host_config first.
 fm_supervision_host_paused_until() {
   local file="$1/.supervision-host-health" cooldown retry
   [ "$(sed -n 's/^key=//p' "$file" 2>/dev/null | head -n 1)" = "$(fm_supervision_host_health_key "$1")" ] || return 1
@@ -130,7 +131,7 @@ fm_supervision_host_paused_until() {
   retry=$(sed -n 's/^retry_after=//p' "$file" 2>/dev/null | head -n 1)
   case "$cooldown" in ''|*[!0-9]*) return 1 ;; esac
   case "$retry" in ''|*[!0-9]*) return 1 ;; esac
-  [ "$cooldown" -gt 0 ] && [ "$(date +%s)" -lt "$retry" ] || return 1
+  [ "$cooldown" -gt 0 ] || return 1
   printf '%s\n' "$retry"
 }
 

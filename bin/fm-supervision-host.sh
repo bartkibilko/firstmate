@@ -654,8 +654,9 @@ health_save() {
 
 # True while the latch holds main to every wake. Needs the engine config.
 health_cooling() {
+  local retry
   health_load
-  fm_supervision_host_paused_until "$STATE" >/dev/null
+  retry=$(fm_supervision_host_paused_until "$STATE") && [ "$(date +%s)" -lt "$retry" ]
 }
 
 # Fold one finished turn into the latch. Sets HEALTH_NOTE to the one line main

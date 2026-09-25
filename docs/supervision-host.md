@@ -15,7 +15,7 @@ Today it runs beside a Claude, Cursor, OpenCode, omp, Grok, or Codex primary, aw
 - Away (the record exists), the host hands each close to the engine, and main stays parked unless the host hands the wake back.
 - `/afk` launches no away daemon on an opted-in home of those harnesses, because the host is the away session there.
 - `/quiet` needs nothing where the attended host runs, because the attended posture already is quiet mode; `bin/fm-afk-launch.sh quiet-check` decides, and a quiet entry refuses there.
-  While the broken-session latch holds, `quiet-check` says instead that the session is paused, that routine wakes reach main until it recovers, and when it retries; no daemon starts.
+  While the broken-session latch holds, until a probe succeeds, `quiet-check` says instead that the session is paused, that routine wakes reach main until it recovers, and when it retries; no daemon starts.
   While the flag `state/.afk` of a quiet daemon from an earlier entry exists, the host stands aside exactly as the plain arm does.
 - Pi keeps its in-process branch whether or not the file exists, and no Pi engine is built.
 - Kimi has no primary supervision protocol, so it has no arm owner to run the host.
@@ -86,7 +86,7 @@ Grok and OpenCode write the mirror but are not verified: their session takes the
 Follow-up: recording that first prompt on Grok and OpenCode, which would let them run the attended posture.
 A captain message typed while an engine turn is already running reaches the engine at its next wake.
 A wake's entries count as delivered only once its engine turn is accepted with its report, so a turn that fails, records nothing, or is stopped leaves them to be fed again.
-An attended wake whose feed cannot be read, or whose mirror holds an entry that does not parse, reaches main with `the dialog mirror could not be read` before any engine turn, and the cursor stays where it was; an away wake runs without the mirror.
+An attended wake whose mirror is missing or cannot be read, or holds an entry that does not parse, reaches main with `the dialog mirror could not be read` before any engine turn, and the cursor stays where it was; an away wake runs without the mirror.
 
 ## Captain outcomes
 
