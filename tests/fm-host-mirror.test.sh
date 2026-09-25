@@ -269,6 +269,40 @@ test_mirror_is_owner_only_under_an_open_umask() {
   pass "mirror: the captain's dialog lands only in an owner-only mirror, even when the file already existed readable by others"
 }
 
+# A Codex message that could not be recorded, because the existing mirror
+# could not be made owner-only, is not read past: the next hook records it
+# once the mirror can be restricted again.
+test_codex_message_refused_by_the_mirror_is_retried() {
+  local home rollout
+  home=$(make_home codex-retry)
+  rollout="$home/rollout.jsonl"
+  item() {  # <role> <text>
+    jq -cn --arg role "$1" --arg text "$2" \
+      '{type: "response_item", payload: {type: "message", role: $role, content: [{type: (if $role == "assistant" then "output_text" else "input_text" end), text: $text}]}}'
+  }
+  post() {  # <home>
+    ROLLOUT=$rollout PATH="$CHMOD_SHIM:$PATH" as_session "$1" '
+      printf "%s" "{\"hook_event_name\":\"PostToolUse\",\"transcript_path\":\"$ROLLOUT\"}" \
+        | FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook codex
+    ' || fail "a Codex mirror hook failed"
+  }
+  item user 'Dispatch the export worker.' > "$rollout"
+  post "$home"
+  item user 'Hold the merge until I say so.' >> "$rollout"
+  : > "$home/chmod-refuses"
+  post "$home"
+  assert_equals "captain|Dispatch the export worker." "$(entries "$home")" \
+    "a message must not land in a mirror that could not be made owner-only"
+  rm -f "$home/chmod-refuses"
+  item assistant 'Holding it.' >> "$rollout"
+  post "$home"
+  assert_equals "captain|Dispatch the export worker.
+captain|Hold the merge until I say so.
+main|Holding it." "$(entries "$home")" \
+    "the next hook must record the refused message, once, ahead of what followed it"
+  pass "mirror: a Codex message the mirror refused is recorded by the next hook instead of being read past"
+}
+
 test_feed_resumes_reanchors_and_is_bounded() {
   local home out
   home=$(make_home feed)
@@ -345,6 +379,7 @@ test_home_without_the_flag_is_untouched
 test_operational_foreign_and_unowned_input_is_dropped
 test_entries_are_deduplicated_and_capped
 test_mirror_is_owner_only_under_an_open_umask
+test_codex_message_refused_by_the_mirror_is_retried
 test_feed_resumes_reanchors_and_is_bounded
 test_recreated_mirror_continues_past_both_cursors
 test_verified_writers

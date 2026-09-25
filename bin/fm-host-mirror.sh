@@ -26,7 +26,8 @@
 # it).
 # In a Codex transcript the user items Codex adds itself open with a wrapper
 # tag or with its AGENTS.md preamble and are dropped the same way; the
-# transcript's read position is $STATE/.host-mirror-codex ("<path>\t<lines>").
+# transcript's read position is $STATE/.host-mirror-codex ("<path>\t<lines>"),
+# which never passes a message the mirror could not record.
 # Every writer is a silent no-op unless this home opted into the supervision
 # host (config/supervision-host, checked before anything else runs), the hook
 # runs in a genuine primary checkout, and this session holds the fleet lock, so
@@ -147,6 +148,8 @@ operational() {  # <text>
 }
 
 # Append one entry. The caller holds nothing; this takes the mirror lock.
+# Returns 1 when the entry could not be recorded; an entry dropped by design
+# (empty, injected, operational, or already recorded) returns 0.
 append_entry() {  # <captain|main> <text> [<id>]
   local tag=$1 text=$2 id=${3:-} key last seq tmp
   text=$(printf '%s' "$text" | sed -e 's/[[:space:]]*$//')
@@ -159,10 +162,10 @@ append_entry() {  # <captain|main> <text> [<id>]
     ! operational "$text" || return 0
   fi
   key=$(fm_supervision_host_main_key "$STATE")
-  fm_lock_acquire_wait "$LOCK" || return 0
+  fm_lock_acquire_wait "$LOCK" || return 1
   if [ -e "$MIRROR" ] && ! chmod 600 "$MIRROR" 2>/dev/null; then
     fm_lock_release "$LOCK"
-    return 0
+    return 1
   fi
   if [ -n "$id" ] && [ -f "$MIRROR" ] \
     && jq -Rne --arg id "$id" --arg tag "$tag" \
@@ -187,7 +190,8 @@ append_entry() {  # <captain|main> <text> [<id>]
       def capped: if length <= $cap then .
         else .[0:($cap / 2 | ceil)] + "\n[mirror truncated: \(length - $cap) characters omitted]\n" + .[length - ($cap / 2 | floor):]
         end;
-      {seq: $seq, epoch: $epoch, key: $key, id: $id, tag: $tag, text: ($text | capped)}' >> "$MIRROR" 2>/dev/null
+      {seq: $seq, epoch: $epoch, key: $key, id: $id, tag: $tag, text: ($text | capped)}' >> "$MIRROR" 2>/dev/null \
+    || { fm_lock_release "$LOCK"; return 1; }
   if [ "$(wc -l < "$MIRROR" 2>/dev/null | tr -d ' ')" -gt $((MIRROR_KEEP + 100)) ] 2>/dev/null; then
     tmp=$(mktemp "$MIRROR.tmp.XXXXXX" 2>/dev/null) \
       && tail -n "$MIRROR_KEEP" "$MIRROR" > "$tmp" 2>/dev/null && mv -f "$tmp" "$MIRROR" 2>/dev/null
@@ -198,9 +202,11 @@ append_entry() {  # <captain|main> <text> [<id>]
 
 # Mirror the user and assistant messages a Codex rollout transcript gained
 # since the last read, each keyed to its transcript line so a re-read records
-# nothing twice. Returns 1 when the payload names no readable transcript.
+# nothing twice. The read position stops at the first message that could not
+# be recorded, so the next hook retries it. Returns 1 when the payload names no
+# readable transcript.
 codex_transcript() {  # <payload>
-  local path record from=1 total entry tag id text
+  local path record from=1 total entry tag id text failed
   path=$(printf '%s' "$1" | jq -r '.transcript_path // empty' 2>/dev/null)
   [ -n "$path" ] && [ -f "$path" ] && [ -r "$path" ] || return 1
   record="$STATE/.host-mirror-codex"
@@ -212,21 +218,21 @@ codex_transcript() {  # <payload>
   case "$total" in ''|*[!0-9]*) return 0 ;; esac
   [ "$from" -le "$((total + 1))" ] || from=1
   [ "$from" -le "$total" ] || return 0
-  sed -n "${from},${total}p" "$path" | awk -v first="$from" '{ print (first + NR - 1) "\t" $0 }' \
+  failed=$(sed -n "${from},${total}p" "$path" | awk -v first="$from" '{ print (first + NR - 1) "\t" $0 }' \
     | jq -Rc --arg file "$(basename "$path")" '
         (split("\t") | {n: .[0], item: (.[1:] | join("\t") | fromjson?)})
         | select(.item.type == "response_item" and .item.payload.type == "message"
             and (.item.payload.role == "user" or .item.payload.role == "assistant"))
-        | {tag: (if .item.payload.role == "user" then "captain" else "main" end),
+        | {n: .n, tag: (if .item.payload.role == "user" then "captain" else "main" end),
            id: "\($file):\(.n)",
            text: ([.item.payload.content[]? | (.text // "")] | join("\n"))}' 2>/dev/null \
     | while IFS= read -r entry; do
         tag=$(printf '%s' "$entry" | jq -r .tag)
         id=$(printf '%s' "$entry" | jq -r .id)
         text=$(printf '%s' "$entry" | jq -r .text)
-        append_entry "$tag" "$text" "$id"
-      done
-  printf '%s\t%s\n' "$path" "$((total + 1))" > "$record" 2>/dev/null || true
+        append_entry "$tag" "$text" "$id" || { printf '%s\n' "$entry" | jq -r .n; break; }
+      done)
+  printf '%s\t%s\n' "$path" "${failed:-$((total + 1))}" > "$record" 2>/dev/null || true
 }
 
 SOURCE_HARNESS=
