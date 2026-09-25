@@ -38,9 +38,10 @@
 # when a turn starts. On each actionable close:
 #   - attended (no record): the close reaches main exactly as the arm printed
 #     it, as without the host, unless the supervision session may take it: the
-#     home names a usable engine, this primary has a verified dialog mirror
-#     (bin/fm-host-mirror.sh verified), the session is not cooling down after
-#     engine errors, and the Pi branch's offer rule
+#     home names a usable engine, its turns have every tool they need, this
+#     primary has a verified dialog mirror (bin/fm-host-mirror.sh verified;
+#     fm_supervision_host_attended_ready owns the list), the session is not
+#     cooling down after engine errors, and the Pi branch's offer rule
 #     (bin/fm-branch-dispatch.mjs offer) says the branch may take this close,
 #     so main-only classes (check triggers, decision-owned triggers, a scan
 #     that is unsafe or holds nothing for the branch) stay main's;

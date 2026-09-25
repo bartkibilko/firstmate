@@ -35,9 +35,15 @@ pass() { printf 'ok - %s\n' "$1"; }
 SLEEPER=$(mktemp "${TMPDIR:-/tmp}/fm-afk-sleeper.XXXXXX")
 printf '#!/usr/bin/env bash\nexec sleep 600\n' > "$SLEEPER"
 chmod +x "$SLEEPER"
+# The supervision host's engine executable, so whether the attended host runs
+# never depends on a claude installed on this host.
+ENGINE_STUB=$(mktemp "${TMPDIR:-/tmp}/fm-afk-engine.XXXXXX")
+printf '#!/usr/bin/env bash\nexit 0\n' > "$ENGINE_STUB"
+chmod +x "$ENGINE_STUB"
+export FM_SUPERVISION_ENGINE_CLAUDE_BIN="$ENGINE_STUB"
 TRACK_TMUX_SESSIONS=""
 GLOBAL_CLEANUP() {
-  rm -f "$SLEEPER" 2>/dev/null || true
+  rm -f "$SLEEPER" "$ENGINE_STUB" 2>/dev/null || true
   local s
   for s in $TRACK_TMUX_SESSIONS; do
     tmux kill-session -t "$s" 2>/dev/null || true
@@ -813,7 +819,7 @@ unit_native_lifecycle() {
 # quiet mode, so a fresh quiet entry launches nothing either, while a quiet
 # daemon that already runs keeps refreshing until /quiet off.
 unit_supervision_host_claude_home_runs_no_away_daemon() {
-  local st out rc key nodeless dir entry
+  local st out rc key missing without
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-host.XXXXXX")
   mkdir -p "$st/state" "$st/config"
   : > "$st/config/supervision-host"
@@ -837,29 +843,41 @@ unit_supervision_host_claude_home_runs_no_away_daemon() {
   if [ "$rc" -ne 0 ] || ! printf '%s' "$out" | grep -F 'Quiet mode needs nothing on this home' >/dev/null; then
     fail "supervision host: quiet-check must say quiet mode needs nothing on a claude host home (rc=$rc): $out"
   fi
-  # Without node the host passes every attended close to main, so quiet mode is
-  # not already running there: quiet-check says nothing and a quiet entry
-  # falls through to the daemon.
-  nodeless="$st/nodeless-bin"
-  mkdir -p "$nodeless"
-  while IFS= read -r dir; do
-    [ -d "$dir" ] || continue
-    for entry in "$dir"/*; do
-      [ "${entry##*/}" != node ] && [ ! -e "$nodeless/${entry##*/}" ] || continue
-      ln -s "$entry" "$nodeless/${entry##*/}" 2>/dev/null || true
-    done
-  done < <(printf '%s\n' "$PATH" | tr ':' '\n')
-  ! PATH="$nodeless" command -v node >/dev/null 2>&1 || fail "fixture: the node-free search path still resolves node"
-  out=$(PATH="$nodeless" FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" quiet-check 2>&1)
-  rc=$?
-  if [ "$rc" -eq 0 ] || [ -n "$out" ]; then
-    fail "supervision host: quiet-check without node must not claim the attended host keeps routine wakes off main (rc=$rc): $out"
-  fi
-  out=$(PATH="$nodeless" FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_MODE=quiet \
-    bash -c '. "$1"; fm_afk_launch_daemon_allowed' _ "$LAUNCH" 2>&1)
-  rc=$?
-  [ "$rc" -eq 0 ] || fail "supervision host: without node the quiet daemon must not be refused as if the attended host ran (rc=$rc): $out"
-  pass "supervision host: quiet-check and the quiet daemon refusal require node, as the attended host does"
+  # Without a tool the host's turns need, the host passes every attended close
+  # to main, so quiet mode is not already running there: quiet-check says
+  # nothing and a quiet entry falls through to the daemon.
+  path_without() {  # <tool>: every tool on PATH but <tool>
+    local bin="$st/no-$1-bin" dir entry
+    mkdir -p "$bin"
+    while IFS= read -r dir; do
+      [ -d "$dir" ] || continue
+      for entry in "$dir"/*; do
+        [ "${entry##*/}" != "$1" ] && [ ! -e "$bin/${entry##*/}" ] || continue
+        ln -s "$entry" "$bin/${entry##*/}" 2>/dev/null || true
+      done
+    done < <(printf '%s\n' "$PATH" | tr ':' '\n')
+    printf '%s\n' "$bin"
+  }
+  for missing in node jq engine; do
+    if [ "$missing" = engine ]; then
+      without="FM_SUPERVISION_ENGINE_CLAUDE_BIN=$st/no-claude"
+    else
+      without="PATH=$(path_without "$missing")"
+      ! env "$without" sh -c "command -v $missing" >/dev/null 2>&1 \
+        || fail "fixture: the $missing-free search path still resolves $missing"
+    fi
+    out=$(env "$without" FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" quiet-check 2>&1)
+    rc=$?
+    if [ "$rc" -eq 0 ] || [ -n "$out" ]; then
+      fail "supervision host: quiet-check without $missing must not claim the attended host keeps routine wakes off main (rc=$rc): $out"
+    fi
+    # shellcheck disable=SC2016 # $1 expands in the inner shell.
+    out=$(env "$without" FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_MODE=quiet \
+      bash -c '. "$1"; fm_afk_launch_daemon_allowed' _ "$LAUNCH" 2>&1)
+    rc=$?
+    [ "$rc" -eq 0 ] || fail "supervision host: without $missing the quiet daemon must not be refused as if the attended host ran (rc=$rc): $out"
+  done
+  pass "supervision host: quiet-check and the quiet daemon refusal require node, jq, and the engine executable, as the attended host does"
   # The host's broken-session latch, as the host persists it after two engine
   # errors, keyed by the engine library's own latch key.
   key=$(bash -c '. "$1/bin/fm-supervision-engine-lib.sh" && fm_supervision_host_config "$2/config" claude && fm_supervision_host_health_key "$2/state"' _ "$ROOT" "$st")

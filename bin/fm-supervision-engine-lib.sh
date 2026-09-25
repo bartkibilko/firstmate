@@ -109,16 +109,25 @@ EOF
 # to it, and the dialog mirror (bin/fm-host-mirror.sh) keys each entry to it.
 # fm_supervision_host_attended_ready <config-dir> <primary-harness>
 # 0 when the attended host may take any close on this home: it opted in with a
-# usable engine, node runs the dispatch owner, and the primary has a verified
-# dialog mirror (bin/fm-host-mirror.sh). Otherwise 1, with
+# usable engine whose executable is found, node runs the dispatch owner and
+# reads the engine's result, jq reads and writes the dialog mirror, perl,
+# timeout, or gtimeout bounds the engine turn (bin/fm-timeout-lib.sh), and the
+# primary has a verified dialog mirror (bin/fm-host-mirror.sh). Otherwise 1, with
 # FM_SUPERVISION_HOST_UNREADY naming why. The host's attended acceptor and
 # quiet mode (bin/fm-afk-launch.sh) share it.
 fm_supervision_host_attended_ready() {
   FM_SUPERVISION_HOST_UNREADY=
   if ! fm_supervision_host_config "$1" "$2" || [ -z "$FM_SUPERVISION_ENGINE" ]; then
     FM_SUPERVISION_HOST_UNREADY="no supervision engine"
+  elif ! fm_supervision_engine_bin "$FM_SUPERVISION_ENGINE" >/dev/null 2>&1; then
+    FM_SUPERVISION_HOST_UNREADY="the $FM_SUPERVISION_ENGINE engine executable is missing"
   elif ! command -v node >/dev/null 2>&1; then
     FM_SUPERVISION_HOST_UNREADY="node is missing"
+  elif ! command -v jq >/dev/null 2>&1; then
+    FM_SUPERVISION_HOST_UNREADY="jq is missing"
+  elif ! command -v perl >/dev/null 2>&1 && ! command -v timeout >/dev/null 2>&1 \
+    && ! command -v gtimeout >/dev/null 2>&1; then
+    FM_SUPERVISION_HOST_UNREADY="none of perl, timeout, or gtimeout can bound the engine turn"
   elif ! "$(dirname "${BASH_SOURCE[0]}")/fm-host-mirror.sh" verified "$2"; then
     FM_SUPERVISION_HOST_UNREADY="no verified dialog mirror for $2"
   fi

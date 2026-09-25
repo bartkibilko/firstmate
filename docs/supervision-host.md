@@ -54,7 +54,7 @@ The daemon's retirement and turning the host on by default are later steps of th
 The posture is the away-posture record, read at every close and again when a turn starts, exactly as the Pi branch reads it.
 
 Attended, the host asks the Pi branch's offer rule (`branchOfferForWake` in `.pi/extensions/lib/fm-branch-dispatch.ts`, through `bin/fm-branch-dispatch.mjs offer`) whether the branch may take the close, so a close reaches main off Pi exactly when it would on Pi: a check trigger, a decision-owned signal or stale trigger, and a scan that is unsafe or holds nothing for the branch stay main's.
-It also passes the close through unchanged when the home names no usable engine, node is missing, the primary has no verified dialog mirror, or the session is cooling down after engine errors ("The broken-session latch" below).
+It also passes the close through unchanged when the home names no usable engine, a tool its turns need is missing (the engine executable, node, jq, or one of perl, timeout, or gtimeout to bound the turn), the primary has no verified dialog mirror, or the session is cooling down after engine errors ("The broken-session latch" below).
 A close accepted away whose turn starts attended, because the captain returned in between, meets the same rule then, and one the session may not take reaches main unchanged.
 A close the engine takes is handled as below; a handled wake with only routine outcomes never reaches main, and a handled wake that recorded a captain outcome exits with one `supervision-host: branch-outcome:` line and without the close it handled ("Captain outcomes" below).
 A turn that fails hands its close to main with one `supervision-host:` line, as away.
