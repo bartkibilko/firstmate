@@ -42,8 +42,12 @@
 # a message id); an entry whose id is already recorded is not appended again,
 # so a surface that fires twice, or a transcript read again, mirrors
 # each entry once. Each text is capped at 4000 characters (head and tail kept,
-# as the Pi mirror caps), and the file keeps its newest 200 entries. Every
-# append and feed runs under $STATE/.host-mirror.lock.
+# as the Pi mirror caps); when the file exceeds 300 entries it is trimmed to
+# its newest 200. New entries continue above both the committed and staged
+# cursor after file recreation so a later commit cannot skip them. Existing
+# mirror files are restricted to owner-only before an append; if that fails,
+# the entry is not written. Every append and feed runs under
+# $STATE/.host-mirror.lock.
 #
 # FEED. $STATE/.host-mirror-cursor holds "<seq>\t<engine session>": the newest
 # entry already fed to that engine conversation. `feed <session> new|resume`
@@ -66,10 +70,10 @@
 # were proven against the real harness to record a session's dialog from its
 # first captain prompt (docs/supervision-host.md "The dialog mirror"); the
 # host runs the attended posture only on those, and every other primary keeps
-# the attended behavior it has without the host. Grok and OpenCode have no
-# writer: their session takes the fleet lock during its first turn, so that
-# turn's captain prompt could never be recorded, and a writer returns with
-# first-prompt capture (docs/supervision-host.md "The dialog mirror").
+# the attended behavior it has without the host. Grok and OpenCode have
+# registered writers but are not verified: their first prompt predates the
+# session's fleet lock and cannot be captured by those writers
+# (docs/supervision-host.md "The dialog mirror").
 #
 # Usage:
 #   fm-host-mirror.sh hook <harness>        a prompt-submit or turn-end hook payload on stdin
